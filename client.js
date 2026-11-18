@@ -99,7 +99,7 @@ window.__ModuleLoader__.load({
   width: auto; min-width: 100%; height: 34px; padding: 0 8px;
   border: none; border-radius: var(--dsw-radius-md, 8px);
   background: transparent; color: var(--dsw-alias-label-primary, #1f1f1f);
-  font-size: 13px; line-height: 20px; font: inherit; text-align: left; outline: none;
+  font-family: inherit; font-size: 13px; line-height: 20px; text-align: left; outline: none;
   cursor: pointer;
 }
 @media (hover: hover) { .dsc-cell:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.06)); } }
@@ -137,7 +137,7 @@ window.__ModuleLoader__.load({
 .dsc-radio {
   display: flex; align-items: center; gap: 8px; width: 100%; padding: 0;
   border: 0; background: transparent; color: var(--dsw-alias-label-secondary, #666);
-  font: inherit; font-size: 12px; line-height: 20px; text-align: left; cursor: pointer;
+  font-family: inherit; font-size: 12px; line-height: 20px; text-align: left; cursor: pointer;
 }
 .dsc-radio:disabled { cursor: default; color: var(--dsw-alias-label-dimmed, #9a9a9a); }
 .dsc-dot {
@@ -149,7 +149,7 @@ window.__ModuleLoader__.load({
   content: ''; display: block; width: 4px; height: 4px; margin: 3px; border-radius: 50%;
   background: var(--dsw-menu-surface-fill, #fff);
 }
-.dsc-link { padding: 0; border: 0; background: transparent; color: var(--dsw-alias-state-business-primary, #4d6bfe); font: inherit; font-size: 11px; cursor: pointer; text-decoration: underline; align-self: flex-start; }
+.dsc-link { padding: 0; border: 0; background: transparent; color: var(--dsw-alias-state-business-primary, #4d6bfe); font-family: inherit; font-size: 11px; cursor: pointer; text-decoration: underline; align-self: flex-start; }
 .dsc-page { display: flex; flex-direction: column; gap: 8px; max-width: 460px; }
 .dsc-pageValue { color: var(--dsw-alias-label-primary, #1f1f1f); font-size: 20px; font-variant-numeric: tabular-nums; }
 `
@@ -284,6 +284,7 @@ window.__ModuleLoader__.load({
       const [failure, setFailure] = useState(null)
       const [open, setOpen] = useState(false)
       const [saving, setSaving] = useState(false)
+      const [pendingKind, setPendingKind] = useState(null)
       const [draft, setDraft] = useState(null)
       const windowRef = useRef(undefined)
       const retried = useRef(undefined)
@@ -326,7 +327,7 @@ window.__ModuleLoader__.load({
       const defaultPercent = state === null ? 60 : state.defaultPercent
       const minPercent = state === null ? 30 : state.minPercent
       const maxPercent = session && session.maxPercent !== null ? session.maxPercent : 99
-      const kind = session === null ? 'default' : session.threshold.kind
+      const kind = pendingKind ?? (session === null ? 'default' : session.threshold.kind)
       const unknownWindow = session === null || session.status === 'unknown-window'
       const tooSmall = session !== null && session.status === 'window-too-small'
       const rowDisabled = locked || session === null || tooSmall
@@ -345,16 +346,22 @@ window.__ModuleLoader__.load({
 
       const choose = (next) => {
         setDraft(null)
-        if (next === 'default') return void apply({ kind: 'default' })
-        if (next === 'off') return void apply({ kind: 'off' })
-        return void apply({ kind: 'percent', percent: suggestedPercent ?? defaultPercent })
+        setPendingKind(next)
+        const threshold = next === 'default'
+          ? { kind: 'default' }
+          : next === 'off'
+            ? { kind: 'off' }
+            : { kind: 'percent', percent: suggestedPercent ?? defaultPercent }
+        void apply(threshold).finally(() => { setPendingKind(null) })
       }
 
-      const summary = kind === 'off'
-        ? t('row.off')
-        : suggestedPercent === null
-          ? t('row.none')
-          : `${usedPercent === null ? '—' : Math.round(usedPercent)}% / ${suggestedPercent}%`
+      const summary = saving
+        ? t('panel.saving')
+        : kind === 'off'
+          ? t('row.off')
+          : suggestedPercent === null
+            ? t('row.none')
+            : `${usedPercent === null ? '—' : Math.round(usedPercent)}% / ${suggestedPercent}%`
 
       const radio = (value, label, hint) => h('button', {
         key: `radio-${value}`,
@@ -405,14 +412,13 @@ window.__ModuleLoader__.load({
             }),
           tooSmall ? null : h('div', { key: 'radios', style: { display: 'flex', flexDirection: 'column', gap: 4 } }, [
             radio('default', fill(t('panel.follow'), { percent: defaultPercent })),
-            radio('custom', t('panel.custom'), kind === 'percent' && maxPercent < 99 ? fill(t('panel.cap'), { percent: maxPercent }) : undefined),
+            radio('percent', t('panel.custom'), kind === 'percent' && maxPercent < 99 ? fill(t('panel.cap'), { percent: maxPercent }) : undefined),
             radio('off', t('panel.off'), t('panel.offHint')),
           ]),
           session !== null && session.clamped
             ? h('div', { key: 'capped', className: 'dsc-caption' }, fill(t('panel.capped'), { percent: session.percent }))
             : null,
           unknownWindow ? h('div', { key: 'unknown', className: 'dsc-caption' }, t('panel.unknownWindow')) : null,
-          saving ? h('div', { key: 'saving', className: 'dsc-caption' }, t('panel.saving')) : null,
           failure === null ? null : h('div', { key: 'failure', className: 'dsc-caption dsc-error' }, failure),
           failure === null ? null : h(LinkButton, { key: 'retry', onClick: () => { void load() } }, t('panel.retry')),
         ]) : null,

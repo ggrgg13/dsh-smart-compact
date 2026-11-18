@@ -24,6 +24,7 @@ M0 可行性 spike 的静态部分已完成，结论见 `docs/spike-results.md`�
 | `docs/20-design.md` | 架构、触发时序、失败处理、存储 |
 | `docs/30-agent-facing.md` | 工具、system prompt、动态信息、缓存分析 |
 | `docs/40-gui.md` | GUI 规格：模型菜单一行、面板、插件页默认值、设置通道 |
+| `docs/45-gui-spec.md` | **待确认**：GUI 最终样式与交互规格（精确数值 + 验收清单） |
 | `docs/50-roadmap.md` | 里程碑、风险、验收标准 |
 | `docs/spike-results.md` | M0 可行性结论（路由、槽、idle 时机、配置可读性）与待验项 |
 | `docs/60-decisions.md` | 决策记录（含被否决的方案） |
