@@ -52,8 +52,8 @@ Host 半已实现并通过 14 个单元/集成测试。**尚未安装到 profile
 ## 已偏离计划的点
 
 - 没有 `Config` schema（模式走命令）；计划里的"四档模式 + 高级覆盖"只实现了四档。
-- 没有 action cards（M4）；agent 还不会向用户一键建议改模式。
-- 没有 GUI（M3）；模型菜单里的会话选项尚未实现。
+- 没有 action cards：原 M4（agent 建议阈值）已按 ADR-10 取消，不是待办。
+- 没有 GUI：M3 已按 `40-gui.md` 重新定义，等待迁移与实现。
 - 状态没有清理策略：每个 session 一条记录，长期使用会缓慢增长（后续加 TTL 或上限）。
 
 ## 验证清单
@@ -73,6 +73,24 @@ Host 半已实现并通过 14 个单元/集成测试。**尚未安装到 profile
 - [ ] 用户紧接着发消息时 `busy` 是否按预期重试一次。
 - [ ] `agent.inject` 的回执在下一个回合真的被模型看到。
 - [ ] 结束回执与提醒不会造成重复注入。
+
+## 迁移到 ADR-9 的阈值模型（未开始）
+
+当前代码用 `mode: off/late/balanced/eager`，与新决定的"全局默认百分比 + 每会话覆盖"不一致。
+迁移清单：
+
+1. `policy.js`：`computePolicy` 接受 `percent` 而不是 `mode`；输出 `effectivePercent`、`thresholdTokens`；
+   保留 `railPercent` 供 UI 夹紧与显示。
+2. `index.js`：会话记录改为 `{ threshold: { kind: 'default' | 'percent' | 'off' } }`；
+   全局 `{ defaultPercent }` 与 `sessions` 放在同一状态文件；`ensure()` 不再写 mode。
+3. 命令：`/smart-compact set <percent>`、`/smart-compact reset`、`/smart-compact off`，
+   旧的 `late|balanced|eager` 接受但映射为百分比并提示已弃用。
+4. 新增三条路由（见 `40-gui.md`）与浏览器信任栅栏。
+5. 测试：迁移 `test/policy.test.mjs` 的期望值；`test/host.test.mjs` 改用 `threshold`；
+   新增路由校验的用例（伪造 Host、跨站、非法 percent、未知 session）。
+6. `docs/DETAIL.md` 同步命令用法与"模式→百分比"的变化。
+
+迁移完成前，`DETAIL.md` 里描述的 `late/balanced/eager` 仍是当前代码的真实行为。
 
 ## 安装
 

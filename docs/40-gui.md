@@ -1,100 +1,158 @@
-# 40 · GUI、默认策略与"agent 建议、一键应用"
+# 40 · GUI：每会话阈值 + 插件默认值
 
-## 位置
+## 决定
 
-`conversation.input.model.options`（`scope: session`，模型菜单里、模型与推理强度之后）。
-理由：这是唯一"会话级 + 与模型窗口强相关"的现成座位，已有占用者（agent-team），
-且用户对"上下文预算"的心智本来就是和模型选择放在一起的。
+- 用户拥有的是**阈值**（窗口的百分比），不是模式；默认值在插件设置页，每会话可覆盖。
+- **不做** agent 建议阈值 / 一键修改（模型判断不可靠，见 ADR-10）。
+- 不懂的用户什么都不用做：默认 60%，面板不打扰、不弹窗、不解释术语。
+- 所有界面只用 DSH 自身能力：模型菜单的 session options 槽、插件页的 bundle config 槽、
+  `contextPressure` 投影、`webServer` + `connection` 服务。第三方插件只作为写法参考，不是依赖。
 
-菜单是弹层，所以**不要把滑杆塞进去**。形态：
-
-```
-模型        deepseek-flash
-推理强度    high
-────────────────────────
-上下文压缩  平衡 · 约 60% 时在回合结束触发   ›
-```
-
-点这一行展开一个二级面板（或小弹层）：
-
-```
-上次压缩    释放约 312k（3 回合前）
-当前占用    42%  (437k / 1049k)
-会触发于    压力 ≥ 629k 且回合结束时
-内置自动线  727k（DSH 自身配置）
-[ 关闭 ] [ 晚一点 ] [ 平衡 ] [ 更积极 ] [ 高级… ]
-```
-
-- 默认只暴露**四档模式**与"关闭"；数字只藏在"高级…"里。
-- "当前占用 / 会触发于 / 内置自动线"三条线一起显示，用户才看得懂发生了什么。
-- 新会话取插件 Config 的默认模式；面板里有"恢复默认"。
-
-## 模式（默认不要求用户设数字）
-
-| 模式 | 行为 | 适用 |
-|---|---|---|
-| `off` | agent 的请求直接拒绝，只靠内置自动压缩 | 短会话、调试插件 |
-| `late` | 水位 = 内置线 − 1×margin，接近自动线才在回合结束时压 | 不想损失细节 |
-| `balanced`（默认） | 水位 = 0.6×W，且不超过内置线 − margin | 大多数情况 |
-| `eager` | 水位 = 0.4×W | 长任务、按 token 付费敏感 |
-
-- `margin` 默认 `0.05×W`，插件 Config 可调。
-- 水位只决定"回合结束时值不值得花钱"，agent 的语义判断仍然是第一道闸门。
-- 高级覆盖：允许 `{ ratio: 0.5 }` 或 `{ tokens: 400000 }`，写进同一个会话记录；
-  百分比按当前路由窗口换算，切模型后自动重算，绝对 token 超出窗口时提示。
-
-## 用户设定与任务不匹配时：agent 建议卡
-
-### 机制选择
-
-用 DSH 内置的 action cards，而不是自己拼一个按钮：
-
-- `ctx.actionCards.register(kind)` 注册 kind，内置工具 `propose_action` 负责发卡；
-- agent 先加载 kind 的 `skill`，然后调用 `propose_action`，卡在**回合结束后**出现；
-- 用户点击 → 客户端调 `actionCards.act(agent, callId, verb, payload)`（`@Remote`）；
-- kind 的 `act()` 调用我们自己的 host 方法写入会话策略，再用 `ctx.actionCards.record()` 记录决定；
-- 下一个模型请求会收到一条 status notice，agent 知道用户选了什么；
-- **agent 不能自己执行 `act`**，一键应用永远是用户动作，符合"确认类权限只属于用户"。
-
-不用 `ask_user_question` 的原因：它只能问，不能把答案变成一次配置写入，
-也留不下可回看的卡；action cards 天然记录决定并回报给 agent。
-
-### kind 草案
+## 数据模型
 
 ```jsonc
-{
-  "action": "smart-compact.set-mode",
-  "skill": "smart-compact-policy",       // 加载后才可见 propose_action
-  "invitation": "你可以在下面的卡片里一键切换这个会话的压缩策略。",
-  "details": {
-    "current": "balanced",
-    "suggested": "eager",
-    "why": "这个任务预计会持续很久，60% 水位下每个回合结束都可能压缩，摘要开销偏高。",
-    "options": ["eager", "balanced", "off"]
-  },
-  "verbs": { "apply": {}, "keep": {} },
-  "act": "写入 mode → record({ phase: 'applied' | 'kept' })"
-}
+// 全局（插件设置页）
+{ "defaultPercent": 60 }
+
+// 每会话
+{ "threshold": { "kind": "default" }
+            | { "kind": "percent", "percent": 65 }
+            | { "kind": "off" } }
 ```
 
-- `apply` 写入建议值；`keep` 保持不变（也记录，避免反复建议同一件事）。
-- `dismiss` 由框架处理。
-- 卡片可附带可选数字（`details.ratio`），但默认只给模式；用户想调数字走"高级…"。
+```text
+railPercent = rail / window * 100
+effective   = clamp(percent, 30, railPercent - 2)
+thresholdTokens = round(window * effective / 100)
+```
 
-### 什么时候才建议
+- `rail` 仍从 `compaction-basic` 的配置推导（`min(W×ratio, W−reserved−headroom)`）。
+- 窗口未知（没选模型）时不猜：面板整块禁用，提示"选择模型后可设置"。
+- `off` 只对命令暴露，UI 不提供——避免多一个需要理解的开关。
 
-只在**检测到明确不匹配**时提议，避免变成噪音：
+## 入口：模型菜单里的一行
 
-- 会话规模与模式冲突：例如 `balanced` 下已经连续 3 个回合触发压缩 → 建议 `late`；
-- 任务显然很短却设了 `eager`（例如前 10 个回合压力 < 15%）→ 建议 `balanced` 或 `off`；
-- 用户设了绝对 token 但换了小窗口模型 → 建议按百分比重算。
+槽位 `conversation.input.model.options`（scope: session），排在模型与推理强度之后：
 
-每个 kind 每回合最多一张卡，天然限流；同一会话对同一建议的 `keep` 会让插件一段时间内不再提。
+```
+模型          deepseek-flash
+推理强度      high
+────────────────────────────
+上下文压缩     42% / 60%        ›
+```
 
-## 否决的放置方案
+- `42%` 来自 `contextPressure` 投影的 `pressureTokens / contextWindow`，是当前占用；
+- `60%` 是本会话生效阈值；
+- 跟随默认时行尾显示 `跟随默认`，覆盖时显示 `自定义`；`off` 显示 `已关闭`；
+- 没有模型或读不到状态时显示 `—`，面板内说明原因。
 
-- **Settings 页**：全局粒度，会把"每个会话单独设"做成"一次设全部"，语义不对。
-- **header utilities**：与模型无关的位置，用户找不到，且和模型窗口割裂。
-- **Composer 常驻压力条**：可以作为以后的补充（`conversation.input.dock`），
-  但常驻 UI 需要额外的 client 投影与 wire view，第一版不做。
-- **自定义 HTML/iframe**：违反 DSH 主题与 locale 机制，且卡片渲染已经现成。
+## 面板
+
+```
+┌────────────────────────────────────────────┐
+│ 上下文压缩                           仅本会话 │
+│                                            │
+│  已用 42%      建议线 60%      系统线 69%   │
+│  ├──────────●───────────┼──────────┼─────┤ │
+│  0                   629k        727k  1.05M│
+│                                            │
+│  达到建议线后，agent 会在合适的回合结束时压缩 │
+│  旧对话。系统线由 DSH 自动触发。            │
+│                                            │
+│  [──────────●──────────────────]   60%     │
+│                                            │
+│  ☑ 跟随默认（60%）        恢复默认   完成   │
+└────────────────────────────────────────────┘
+```
+
+- 三个标记是核心：当前占用、建议线（可拖）、系统线（灰刻度）。只有一个百分比的设置没有参照。
+- 双读数：`60% · 629k / 1.05M`；窗口未知时只显示百分比。
+- 滑杆范围 `30% – railPercent − 2%`，步进 1；拖动时只更新显示，**松手才提交一次**。
+- 勾选"跟随默认"时滑杆禁用并显示默认值；取消勾选才切到自定义。
+- 无保存按钮；`完成` 仅关闭。Esc、点击外部关闭，焦点回到那一行。
+- 滑杆 `role="slider"`，方向键 ±1，Home/End 到边界，`aria-valuetext` 给百分比加 token。
+
+## 插件设置页
+
+槽位 `plugins.bundle.config`，key 为包名 `@local/dsh-smart-compact`，用 `view: 'page'` 渲染：
+
+```
+默认压缩阈值
+├──────●────────┤  60%
+新会话继承这个值；已有会话的自定义不受影响。
+```
+
+- 范围 30–90。插件页没有会话与模型，不显示占用和系统线；夹紧发生在使用时。
+- `view: 'summary'` 时只渲染一行文字 `60%`。
+- 样式照宿主表单：同一间距、同一输入尺寸、同一主题 token，不引入自定义配色。
+
+## 设置通道：一条小路由
+
+DSH 的 Host 已有 `webServer.register` 与 `connection.requestRejection`（`webserver` / `connection` 是
+`dsh-web-app` 的宿主行，属 DSH 自身）。插件注册三个精确路由：
+
+| 方法 | 路径 | 作用 |
+|---|---|---|
+| GET | `/smart-compact/state?session=<id>` | 返回全局默认、会话覆盖、生效阈值、窗口、系统线 |
+| POST | `/smart-compact/session` | `{ session, threshold }` 写会话覆盖 |
+| POST | `/smart-compact/default` | `{ percent }` 写全局默认 |
+
+响应统一 `application/json`、`Cache-Control: no-store`。
+
+### 校验
+
+- 只接受精确路径与声明的方法；
+- 请求体上限 4 KB，字段白名单；
+- `percent` 必须是 30–90 的整数，`threshold.kind` 必须属于闭集；
+- `session` 必须是当前存活的会话（`ctx.agents.get`），否则 404；
+- 浏览器信任栅栏：只接受回环或 `ctx.webStartup.trustedHosts` 声明的 Host，
+  `Sec-Fetch-Site: cross-site` 一律拒绝，带 `Origin` 时必须与 Host 同源，
+  并委托 `connection.requestRejection`；该服务缺失或抛异常时**按拒绝处理**（fail closed）。
+
+### 为什么不用其他通道
+
+- **typert Remote（`ctx.remote.<ns>`）**：需要注册 schema，第三方 bundle 里没有成功先例可抄，
+  与 DSH 版本耦合，升级风险高。
+- **会话命令（`ctx.remote.commands.execute`）**：写和读都要落 `command/run`，
+  每次拖动滑杆都会在对话里留一行，污染对话，且读取还得再维护一个投影。
+
+## 实时占用从哪来
+
+`@deepseek-ai/dsh-token-meter` 已经注册了 `contextPressure` 投影，wire view 是
+`{ pressureTokens?, projectedTokens?, contextWindow? }`。客户端在槽组件里用
+`useProjection('contextPressure')` 读取即可，不需要插件自己的 Host 逻辑，也不需要轮询。
+`tokenUsage` 投影同理（如果以后要显示累计花费）。
+
+## 状态与边界
+
+| 状态 | 表现 |
+|---|---|
+| 未挂载压缩后端 | 行置灰，面板提示"当前不可用" |
+| 未选模型 / 窗口未知 | 滑杆禁用，提示"选择模型后可设置" |
+| 读取失败 | 行显示 `—`，面板给"重试" |
+| 保存失败 | 回滚到上一个值，面板内提示，不弹 toast |
+| 会话运行中 | 可改；下一次 `compact_context` 或回合结束复核时生效 |
+| 面板打开时占用增长 | 投影实时更新，滑杆位置不动 |
+
+## 文案
+
+- 只用三个词：**已用**、**建议线**、**系统自动压缩线**。
+- 不出现：阈值、水位线、watermark、rail、token 预算、buffer。
+- 中文同步英文：`Used` / `Suggested` / `System line`。
+
+## 成本
+
+| 部分 | 估计 | 说明 |
+|---|---|---|
+| 行 + 面板组件 | ~1 天 | 主题 token、locale、键盘与焦点 |
+| 路由 + 信任栅栏 + 校验 | ~0.5–1 天 | 复用 DSH 的 `requestRejection` 与回环校验 |
+| 插件页默认值 | ~0.5 天 | 同一滑杆组件，`view` 分支 |
+| 联调与异常态 | ~0.5 天 | 无模型、无后端、读取/保存失败、并发 |
+| 合计 | ~2.5–3 天 | 不含 Host 策略改造（约 0.5 天） |
+
+## 明确不做
+
+- 不做 agent 建议卡、不做"一键按模型建议调整"。
+- 不做全局阈值仪表盘、不做历史曲线。
+- 不做每步刷新的常驻压力条（面板打开时才订阅）。
+- 不依赖任何已安装第三方插件的接口与数据。

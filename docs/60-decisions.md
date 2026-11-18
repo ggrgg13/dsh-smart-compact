@@ -23,6 +23,9 @@
 
 ## ADR-2 · 不要求用户设置 token 阈值，默认从 DSH 配置推导
 
+> **已被 ADR-9 取代。** 用户最终要求每会话可设阈值、插件里设默认值；
+> 保留此条仅作历史记录。
+
 **Context**：用户不想手工算参数；内置阈值随模型窗口、输出预留和 headroom 变化，
 手填数字很容易与真实触发点错位。
 
@@ -54,6 +57,8 @@
 ---
 
 ## ADR-4 · 用户一键应用走 action cards
+
+> **已被 ADR-10 取代。** 用户决定取消"agent 建议阈值"这一功能，保留此条仅作历史记录。
 
 **Context**：需要 agent 提议、用户确认、并且能在对话里留痕的一键操作。
 
@@ -115,10 +120,62 @@ subagent 继承 mode 但不共享 pending。
 **Decision**：
 - 时机判断：agent。system prompt 给正向/反向信号与行为准则（约 100 词），
   并明确"不要为了压缩提前结束回合"。
-- 阈值：用户 + 插件策略。agent 只能在明显不匹配时提议改模式（ADR-4 的卡），不能自己改水位。
+- 阈值：用户 + 插件策略。agent 不参与阈值的决定，也不能自己改（ADR-10）。
 - 数字：`check` 工具与一次性通知提供，绝不每步刷新。
 
 **Consequences**：
 - agent 有了可执行的判断表，而不是一句"必要时压缩"。
-- 需要额外实现跨水位提醒，否则 agent 可能忘记 `check`。
-- 多一层"agent 提议、用户确认"的交互，但阈值不会被 agent 悄悄改掉。
+- 需要额外实现跨阈值提醒，否则 agent 可能忘记 `check`。
+- 阈值不会被 agent 悄悄改掉；代价是它只能按用户/插件设定的线行动。
+
+---
+
+## ADR-9 · 阈值 = 全局默认百分比 + 每会话覆盖
+
+**Context**：四档模式（late / balanced / eager）要求用户理解系统线、成本与细节损失的权衡；
+而"早一点/晚一点"本质是一个百分比。用户明确要求：每会话可设、插件里有默认值、
+不懂的人用默认就好。
+
+**Decision**：
+- 全局 `defaultPercent`（默认 60），在插件设置页改；
+- 每会话 `threshold` 三态：`default` / `percent`（30–90 整数）/ `off`；
+- 生效值 `clamp(percent, 30, railPercent − 2)`，按当前模型窗口换算成 token；
+- `off` 只对 `/smart-compact` 命令开放，UI 不暴露；
+- 窗口未知时不判定，UI 禁用。
+
+**Consequences**：
+- 面板只需要一个滑杆，"跟随默认"一个勾选，用户认知负担最小。
+- 换模型或 DSH 调整压缩配置时阈值自动重算，不需要用户重设。
+- 现有代码里的 mode 实现需要迁移；迁移期间旧的 `late/balanced/eager` 命令值映射为
+  `default` 下的百分比（late → rail−10%，balanced → 60%，eager → 40%）。
+
+---
+
+## ADR-10 · 取消"agent 建议阈值"
+
+**Context**：曾计划让 agent 在发现用户设置与任务不匹配时发一张卡（ADR-4），用户一键接受。
+
+**Decision**：取消。agent 只决定时机（`check` / `request`），不参与阈值的建议、修改或默认值。
+
+**Consequences**：
+- 少一个 action kind、一个 skill、一份客户端卡片渲染与冷却逻辑。
+- 用户不会被模型引导到它自己无法验证的设置上；不懂的用户保持默认值。
+- 产品故事更简单：阈值是人的偏好，时机是模型的判断。
+
+---
+
+## ADR-11 · 客户端读写设置走插件自己的 HTTP 路由
+
+**Context**：客户端需要读写"全局默认 + 每会话阈值"，而 DSH 没有给第三方插件现成的
+per-session 设置通道。可选项：typert Remote、会话命令、自定义 HTTP 路由。
+
+**Decision**：用 `ctx.webServer.register` 注册三条精确路由
+（`GET /smart-compact/state`、`POST /smart-compact/session`、`POST /smart-compact/default`），
+并实现浏览器信任栅栏：回环/受信 Host、`Sec-Fetch-Site`、同源 Origin 校验，
+委托 `connection.requestRejection`，异常即拒绝（fail closed）。
+
+**Consequences**：
+- 设置变更不污染对话（会话命令方案会在聊天里留 command 行）。
+- 需要维护一小段安全相关代码，并在 M0 用真实浏览器请求验证。
+- 远程（非回环）访问需要显式降级：只读或隐藏面板，而不是让插件报错。
+- 不引入任何第三方插件依赖；`dsh-whale-widget` 只作为写法参考。

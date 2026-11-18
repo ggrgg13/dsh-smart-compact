@@ -70,48 +70,52 @@ agent/status === 'idle'
 | 失败风险 | busy 竞争，可重试 | 无（turn 已开） |
 | 建议 | **v1 默认** | v2 增强，按需切换 |
 
-## 水位线（watermark）
+## 阈值模型：全局默认 + 每会话覆盖
 
-不要求用户输入数字。默认从 DSH 自身配置推导：
+用户拥有的是百分比阈值，默认值在插件设置里：
 
+```text
+railPercent = rail / window * 100
+effective   = clamp(percent, 30, railPercent − 2)
+thresholdTokens = round(window * effective / 100)
 ```
-rail      = min(W × ratio, W − reservedOutput − headroom)   # 尽量读 compaction 实例的 config
-watermark = clamp(0.6 × W, 0, rail − margin)                # margin 默认 0.05 × W
-```
 
-- 读不到 `config` 时退回内置默认值（ratio 0.8 / headroom 65,536）并记录一次警告。
-- 水位线只决定"回合结束时值不值得花钱压缩"，不决定 agent 是否请求。
-- agent 的请求是**语义判断**，水位线是**成本闸门**：低于水位时请求会被跳过并告知"还不需要"。
-- 自动压缩保持开启；如果内置线先到，pending 失效，下一回合 notice 会说明"已由系统压缩"。
+- `rail` 仍从 `compaction` 配置推导：`min(W × ratio, W − reservedOutput − headroom)`；
+  读不到 `config` 时退回 ratio 0.8 / headroom 65,536，并记一次警告。
+- 每会话只有三种状态：跟随默认、覆盖百分比、关闭（关闭只对命令开放）。
+- 窗口未知时不猜：不做阈值判定，UI 禁用。
+- 阈值只决定"回合结束时值不值得花钱压缩"，不决定 agent 是否在边界请求。
+- agent 的请求是语义判断，阈值是成本闸门：低于阈值时请求被拒绝或跳过。
+- 自动压缩保持开启；内置线先到时 pending 失效，下一回合 notice 说明。
 
 ## 会话状态
 
-每个 session 一条记录（`storage`，按 sessionId 键）：
+全局设置（插件级）：
+
+```jsonc
+{ "defaultPercent": 60 }
+```
+
+每个 session 一条记录（按 sessionId 键）：
 
 ```jsonc
 {
-  "mode": "balanced",          // off | late | balanced | eager
-  "override": null,            // 高级：{ ratio?: number, tokens?: number }
-  "pending": {                 // 未完成的请求；有则会在 idle 时消费
-    "requestedAt": 1732000000000,
-    "turn": 12,
-    "reason": "phase done, docs written"
-  },
+  "threshold": { "kind": "default" },   // default | percent | off
+  "pending": { "requestedAt": 1732000000000, "reason": "phase done, docs written" },
   "lastResult": { "at": 1732000123000, "freedTokens": 312000, "status": "ok" }
 }
 ```
 
-- fork：复制父会话的记录（pending 除外）。
-- subagent：默认继承父会话的 mode，但**不共享 pending**；子会话的压缩由子会话自己的请求触发。
-  是否让子会话默认 `off` 可在 M2 决定。
+- fork：复制父会话的 threshold（pending 除外）。
+- subagent：默认继承父会话的 threshold，但不共享 pending；子会话是否默认 `off` 在 M2 决定。
 
 ## 与内置自动压缩的协作
 
 - `auto` 保持 `true`。插件不写别人的 Config，不重启别人。
 - 插件把压缩"提前"到边界，内置线只是兜底；两者的阈值不冲突：
-  - `pressure ≥ watermark` 且回合结束 → 插件压缩；
+  - `pressure ≥ thresholdTokens` 且回合结束 → 插件压缩；
   - 回合中途越线 → 内置压缩，插件在下一回合告知 agent。
-- 如果用户在自己的 `cordis.patch.yml` 里调了 `compaction-basic` 的阈值，插件的 watermark 会自动跟随。
+- 如果用户在自己的 `cordis.patch.yml` 里调了 `compaction-basic` 的阈值，插件的 rail 与默认阈值都会自动跟随。
 
 ## 失败与竞争
 
