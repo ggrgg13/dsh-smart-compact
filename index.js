@@ -344,6 +344,25 @@ export function apply(ctx) {
     }
   }
 
+  /**
+   * Consume a request that a human command queued while the session was already
+   * idle. The executor otherwise listens for `agent/status` transitions, and an
+   * idle command starts no turn: without this kick the request would sit until
+   * the next turn ended.
+   *
+   * The timeout lets the command settle and its result render first; a request
+   * queued during a turn still travels the ordinary idle-transition path.
+   */
+  function kickIfIdle(agent) {
+    if (agent?.status !== 'idle') return
+    const timer = setTimeout(() => {
+      runPending(agent).catch(() => {
+        // runPending already records its own failures and notifies the agent.
+      })
+    }, 0)
+    if (typeof timer?.unref === 'function') timer.unref()
+  }
+
   function toolDefinition() {
     return {
       name: 'smart_compact',
@@ -546,9 +565,12 @@ export function apply(ctx) {
         }
         rec.attempts = 0
         save()
+        // A command typed into an idle session starts no turn, so no status
+        // transition would ever consume this request.
+        kickIfIdle(agent)
         return {
           kind: 'success',
-          text: `已强制排队：本回合结束后执行压缩，无视阈值与窗口。${describeBudgetZh(current)}`,
+          text: `已强制排队：压缩随后执行，无视阈值与窗口。${describeBudgetZh(current)}`,
         }
       }
       if (first === 'off') {

@@ -127,6 +127,9 @@ function createContext({ pressure: initialPressure = 700_000, window: initialWin
       messages.push(input)
       notices.push(input.content.map(block => block.text).join(''))
     },
+    // A human command typed into an idle session starts no turn; the plugin
+    // reads this to consume the request it queues without a status transition.
+    status: 'idle',
     // The Host plane has no compaction service; dsh-web-app mounts the backend
     // per agent preset, so the agent scope is the one that resolves it.
     ctx: compactionIn === 'agent' ? { get: (name) => (name === 'compaction' ? compactionBackend : undefined) } : undefined,
@@ -385,6 +388,22 @@ test('the human command refuses the bypass until the switch is on, then queues i
   dispose()
 })
 
+
+test('a human command queued on an idle session runs without a status event', async () => {
+  // A typed command starts no turn, so no `agent/status` transition follows;
+  // without the kick the request would wait for the next turn to end.
+  const { registered, agent, compactionCalls, dispose } = createContext({ withRoutes: true, pressure: 100_000 })
+  await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: true }),
+  })
+  const queued = registered.command.handler({ agent, rawInput: 'force idle' })
+  assert.equal(queued.kind, 'success')
+  assert.equal(compactionCalls.length, 0, 'the command itself must not compact synchronously')
+  await new Promise((resolve) => setTimeout(resolve, 5))
+  assert.equal(compactionCalls.length, 1)
+  dispose()
+})
 
 test('a session percent is clamped below the rail and applies to the tool', async () => {
   const { registered, agent, dispose } = createContext({ pressure: 700_000 })

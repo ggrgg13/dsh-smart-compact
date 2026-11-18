@@ -4,7 +4,7 @@
 
 ## 结论
 
-Host 半与 Client 半都已实现，45 个测试通过。**尚未安装到 profile**，所以真实运行时行为
+Host 半与 Client 半都已实现，46 个测试通过。**尚未安装到 profile**，所以真实运行时行为
 （`compactNow` 在 idle 的时序、浏览器栅栏与 cookie、客户端 bundle 的加载与渲染）
 还没有在 DSH 里验证过——按约定，安装放在功能满意之后一次性做。
 
@@ -20,7 +20,7 @@ Host 半与 Client 半都已实现，45 个测试通过。**尚未安装到 prof
 | `package.json` | bundle 清单：`dsh.bundle.patch` + `dsh.client`（`platform: 'web'`）+ `exports['./client']`。 |
 | `locale/{en,zh}.json` | 插件卡片元数据（`meta.title/description/detail`），供插件管理器读取。 |
 | `test/policy.test.mjs` | 12 个策略测试（rail、夹紧、窗口过小、迁移、绕过开关、读数文案）。 |
-| `test/host.test.mjs` | 22 个集成测试（假 Cordis context，跑真实注册与执行路径，含绕过开关的可见性与命令的 input 声明）。 |
+| `test/host.test.mjs` | 23 个集成测试（假 Cordis context，跑真实注册与执行路径，含绕过开关的可见性与命令的 input 声明）。 |
 | `test/routes.test.mjs` | 9 个路由测试（栅栏、方法、媒体类型、体积上限、字段校验、绕过开关、卸载）。 |
 | `test/client.test.mjs` | 2 个客户端测试（bundle 注册、两个槽的注册参数）。 |
 
