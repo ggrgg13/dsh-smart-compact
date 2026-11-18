@@ -101,12 +101,23 @@
   Dev Note 里"model-facing tool"也仍列为未决项。本插件补的就是这个空位。
 - 压缩只能压缩 surface（对话历史），不能压缩 system prompt、工具声明与请求信封。
 
-## 8. 待验证（M0 spike 必须回答）
+## 8. M0 spike 结论
 
-1. `ctx.get('compaction')` 的实例上 `config`（`ResolvedConfig`）是否在运行时可靠可读
-   ——抽象接口没声明它，只有 `BasicCompactionEngine` 有；需要兜底。
-2. agent 进入 `idle` 与 `turn/end` 的先后顺序，以及此刻调用 `compactNow` 的竞争窗口
-   （用户立刻发下一条消息时 `runMaintenance` 是否 `busy`）。
-3. `ctx.storage` 中适合"按 sessionId 存小 JSON"的具体 form / domain API。
-4. action cards 的客户端渲染在当前 profile 是否完整可用（toolview 键存在只是强证据）。
-5. 压缩完成后，agent 下一回合能否可靠拿到"释放了多少 token"的读数（用 `contextPressure` 对比）。
+静态部分已核实完毕，细节与源码引用见 [`spike-results.md`](spike-results.md)。
+
+1. **`compaction.config` 可读**：`CompactionEngine` 是 `Service`
+   （`super(ctx, 'compaction')`），`BasicCompactionEngine` 上有
+   `readonly config: ResolvedConfig`。运行时用 `Reflect.get` 读；读不到就降级到
+   `0.8 / 65_536` 默认值。
+2. **idle 时机安全**：`status` 把 `maintenance` 折叠成 `idle`，而 `setPhase` 只在
+   状态字符串变化时发事件 → `agent/status('idle')` 每回合只发一次（在 `kick()` 的
+   `finally` 里），我们的监听器不会被自己的维护动作再次触发。
+3. **存储**：用 `node:fs` 在 `DSH_PROFILE_DIR` 下写一个 JSON（不走 `ctx.storage`），
+   按当前实现即可；`ctx.storage` 留作以后需要多写者时再评估。
+4. **action cards**：已从设计中移除（ADR-10），不再需要验证。
+5. **释放量**：用 `ctx.tokenMeter.measure(session).totalTokens` 前后相减，
+   不用 `contextPressure` 的差值（它滞后一次请求）。
+
+仍待真实装载验证（R1–R5，见 `spike-results.md` 第 7 节）：idle 后 `compactNow`
+真的成功、浏览器 cookie/伪造 Host 的栅栏、插件页配置区渲染、客户端半身加载、
+`measure()` 差值量级。

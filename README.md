@@ -5,7 +5,8 @@
 
 ## 状态
 
-Host 半已实现，14 个单元/集成测试通过；**尚未安装到 profile**，GUI 与 action cards 未做。
+Host 半已实现，14 个单元/集成测试通过；**尚未安装到 profile**，GUI 未做。
+M0 可行性 spike 的静态部分已完成，结论见 `docs/spike-results.md`。
 实现细节与未验证项见 `docs/70-implementation.md`。设计基于实际安装的 DSH 0.2.2-rc.3
 （Desktop / profile `desktop`）核对，事实清单见 `docs/10-facts.md`。
 
@@ -22,12 +23,13 @@ Host 半已实现，14 个单元/集成测试通过；**尚未安装到 profile*
 | `docs/10-facts.md` | 已核实的 DSH 行为与数字（含来源）与待验证项 |
 | `docs/20-design.md` | 架构、触发时序、失败处理、存储 |
 | `docs/30-agent-facing.md` | 工具、system prompt、动态信息、缓存分析 |
-| `docs/40-gui.md` | GUI 位置、默认策略、agent 一键建议卡 |
+| `docs/40-gui.md` | GUI 规格：模型菜单一行、面板、插件页默认值、设置通道 |
 | `docs/50-roadmap.md` | 里程碑、风险、验收标准 |
+| `docs/spike-results.md` | M0 可行性结论（路由、槽、idle 时机、配置可读性）与待验项 |
 | `docs/60-decisions.md` | 决策记录（含被否决的方案） |
 | `docs/70-implementation.md` | 已实现的 Host 半、实现期决定、验证与未验证项 |
 
 ## 预期形态
 
-一个可安装的本地 DSH bundle：Host 半（工具 + 策略 + prompt + action card kind）+
-Client 半（模型菜单里的会话选项）。最终以 `Plugins > Add plugin` 安装本目录。
+一个可安装的本地 DSH bundle：Host 半（工具 + 策略 + prompt + 压缩执行器）+
+Client 半（模型菜单里的会话选项 + 插件页默认阈值）。最终以 `Plugins > Add plugin` 安装本目录。
