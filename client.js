@@ -1,19 +1,16 @@
 /**
- * dsh-smart-compact — Client half.
+ * @local/dsh-smart-compact — Client half.
  *
  * Two seats:
  *
  * - `conversation.input.model.options` — one row in the model/reasoning menu
- *   showing used context against this session's suggested line; expanding it
- *   reveals the threshold controls.
+ *   that matches the menu's own 34px cells, expanding into a threshold control
+ *   whose track is the context bar itself.
  * - `plugins.bundle.config` — the plugin page's default-threshold control.
  *
  * No build step: DSH loads this file as a Cordis client bundle through the
- * `dsh.client` declaration in package.json.
- *
- * Writes go through the Host's `/smart-compact/*` routes. The live usage number
- * rides the `contextPressure` projection supplied by the slot props
- * (`useProjection`), so the row updates without polling.
+ * `dsh.client` declaration in package.json. Styles are injected once as a
+ * <style> element so the row can reuse the menu cell metrics exactly.
  */
 
 window.__ModuleLoader__.load({
@@ -31,12 +28,12 @@ window.__ModuleLoader__.load({
     const STATE_PATH = '/smart-compact/state'
     const SESSION_PATH = '/smart-compact/session'
     const DEFAULT_PATH = '/smart-compact/default'
+    const STYLE_ID = 'dsh-smart-compact-style'
 
     const en = {
       'row.label': 'Context compaction',
       'row.off': 'off',
-      'row.unavailable': '—',
-      'panel.open': 'Change the compaction threshold',
+      'row.none': '—',
       'panel.used': 'Used',
       'panel.suggested': 'Suggested line',
       'panel.system': 'System line',
@@ -44,19 +41,19 @@ window.__ModuleLoader__.load({
       'panel.custom': 'Custom',
       'panel.off': 'Off',
       'panel.offHint': 'The system line still applies.',
-      'panel.cap': 'up to {percent}%',
+      'panel.cap': 'max {percent}%',
       'panel.saving': 'Saving…',
       'panel.saveFailed': 'Could not save: {message}',
       'panel.windowTooSmall': 'This model leaves no room below the system line, so no suggestion is made.',
-      'panel.unknownWindow': 'The context window is known after the first request.',
+      'panel.unknownWindow': 'The window is known after the first request.',
       'panel.capped': 'The system line caps this at {percent}%.',
-      'panel.unavailable': 'Settings are unavailable right now. Reload the page to retry.',
+      'panel.unavailable': 'Settings are unavailable right now. Reload to retry.',
       'panel.retry': 'Retry',
       'settings.title': 'Default compaction threshold',
       'settings.description': 'New sessions start here; a session can override it from the model menu.',
       'settings.clampHint': 'Above the system line, every session truncates it to its own cap.',
       'settings.loading': 'Loading…',
-      'settings.unavailable': 'Settings are unavailable right now. Reload the page to retry.',
+      'settings.unavailable': 'Settings are unavailable right now. Reload to retry.',
       'settings.retry': 'Retry',
       'settings.saveFailed': 'Could not save: {message}',
       'settings.saved': 'Saved',
@@ -65,8 +62,7 @@ window.__ModuleLoader__.load({
     const zh = {
       'row.label': '上下文压缩',
       'row.off': '已关闭',
-      'row.unavailable': '—',
-      'panel.open': '调整压缩阈值',
+      'row.none': '—',
       'panel.used': '已用',
       'panel.suggested': '建议线',
       'panel.system': '系统自动压缩线',
@@ -90,6 +86,81 @@ window.__ModuleLoader__.load({
       'settings.retry': '重试',
       'settings.saveFailed': '保存失败：{message}',
       'settings.saved': '已保存',
+    }
+
+    /**
+     * Menu-cell metrics copied from the host menu (ModelSelect.module.css):
+     * 34px rows, 13/20 type, 8px padding, tertiary value, 12px chevron.
+     */
+    const CSS = `
+.dsc-wrap { display: flex; flex-direction: column; width: 100%; }
+.dsc-cell {
+  box-sizing: border-box; display: flex; align-items: center; gap: 6px;
+  width: auto; min-width: 100%; height: 34px; padding: 0 8px;
+  border: none; border-radius: var(--dsw-radius-md, 8px);
+  background: transparent; color: var(--dsw-alias-label-primary, #1f1f1f);
+  font-size: 13px; line-height: 20px; font: inherit; text-align: left; outline: none;
+  cursor: pointer;
+}
+@media (hover: hover) { .dsc-cell:hover:not(:disabled) { background: var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.06)); } }
+.dsc-cell:focus-visible { background: var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.06)); }
+.dsc-cell:disabled { color: var(--dsw-alias-label-dimmed, #9a9a9a); cursor: default; }
+.dsc-cellLabel { flex: 0 0 auto; white-space: nowrap; }
+.dsc-cellValue {
+  flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; text-align: right; color: var(--dsw-alias-label-tertiary, #8a8a8a);
+  font-variant-numeric: tabular-nums;
+}
+.dsc-chevron { flex: 0 0 auto; width: 12px; height: 12px; color: var(--dsw-alias-menu-icon, #8a8a8a); transition: transform 120ms ease; }
+.dsc-chevronOpen { transform: rotate(90deg); }
+.dsc-panel { display: flex; flex-direction: column; gap: 8px; padding: 4px 8px 10px; }
+.dsc-line { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.dsc-caption { color: var(--dsw-alias-label-caption, #8a8a8a); font-size: 11px; line-height: 16px; }
+.dsc-num { color: var(--dsw-alias-label-primary, #1f1f1f); font-size: 13px; font-variant-numeric: tabular-nums; }
+.dsc-strong { color: var(--dsw-alias-label-primary, #1f1f1f); font-size: 13px; }
+.dsc-error { color: var(--dsw-alias-state-error-primary, #c0392b); }
+.dsc-track { position: relative; display: flex; align-items: center; height: 24px; margin: 2px 0 0; }
+.dsc-bar {
+  position: relative; width: 100%; height: 6px; border-radius: 3px;
+  background: var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.1));
+}
+.dsc-barUsed { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 3px; background: var(--dsw-alias-state-business-primary, #4d6bfe); opacity: .55; }
+.dsc-barTick { position: absolute; top: -4px; bottom: -4px; width: 1px; background: var(--dsw-alias-state-warn-label, #b26a00); opacity: .8; }
+.dsc-barKnob {
+  position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%;
+  background: var(--dsw-alias-label-primary, #1f1f1f); box-shadow: 0 0 0 2px var(--dsw-menu-surface-fill, #fff);
+  pointer-events: none;
+}
+.dsc-range { position: absolute; inset: 0; width: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.dsc-range:disabled { cursor: default; }
+.dsc-track:focus-within .dsc-barKnob { box-shadow: 0 0 0 2px var(--dsw-menu-surface-fill, #fff), 0 0 0 4px var(--dsw-focus-ring-color, var(--dsw-alias-state-business-primary, #4d6bfe)); }
+.dsc-radio {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 0;
+  border: 0; background: transparent; color: var(--dsw-alias-label-secondary, #666);
+  font: inherit; font-size: 12px; line-height: 20px; text-align: left; cursor: pointer;
+}
+.dsc-radio:disabled { cursor: default; color: var(--dsw-alias-label-dimmed, #9a9a9a); }
+.dsc-dot {
+  flex: 0 0 auto; box-sizing: border-box; width: 12px; height: 12px; border-radius: 50%;
+  border: 1px solid var(--dsw-alias-label-tertiary, #8a8a8a);
+}
+.dsc-radioOn .dsc-dot { border-color: var(--dsw-alias-state-business-primary, #4d6bfe); background: var(--dsw-alias-state-business-primary, #4d6bfe); }
+.dsc-radioOn .dsc-dot::after {
+  content: ''; display: block; width: 4px; height: 4px; margin: 3px; border-radius: 50%;
+  background: var(--dsw-menu-surface-fill, #fff);
+}
+.dsc-link { padding: 0; border: 0; background: transparent; color: var(--dsw-alias-state-business-primary, #4d6bfe); font: inherit; font-size: 11px; cursor: pointer; text-decoration: underline; align-self: flex-start; }
+.dsc-page { display: flex; flex-direction: column; gap: 8px; max-width: 460px; }
+.dsc-pageValue { color: var(--dsw-alias-label-primary, #1f1f1f); font-size: 20px; font-variant-numeric: tabular-nums; }
+`
+
+    /** Inject the stylesheet once per page. */
+    function ensureStyles() {
+      if (typeof document === 'undefined' || document.getElementById(STYLE_ID) !== null) return
+      const style = document.createElement('style')
+      style.id = STYLE_ID
+      style.textContent = CSS
+      document.head.appendChild(style)
     }
 
     /** Interpolate `{name}` placeholders without a dependency. */
@@ -118,19 +189,13 @@ window.__ModuleLoader__.load({
       return await response.json()
     }
 
-    const CAPTION = { color: 'var(--dsw-alias-label-caption, #8a8a8a)', fontSize: 11, lineHeight: 1.5 }
-    const DIMMED = { color: 'var(--dsw-alias-label-dimmed, #9a9a9a)', fontSize: 11 }
-    const STRONG = { color: 'var(--dsw-alias-label-primary, #1f1f1f)', fontSize: 12, fontVariantNumeric: 'tabular-nums' }
-    const ERROR = { color: 'var(--dsw-alias-state-error-primary, #c0392b)' }
-    const ACCENT = 'var(--dsw-alias-state-business-primary, #4d6bfe)'
-
     /** Percentage of the window one token count represents. */
     function pct(tokens, windowSize) {
       if (!Number.isFinite(tokens) || !Number.isFinite(windowSize) || windowSize <= 0) return null
       return Math.max(0, Math.min(100, (tokens / windowSize) * 100))
     }
 
-    /** Compact token count for the reading line. */
+    /** Compact token count for a reading line. */
     function tokens(value) {
       if (!Number.isFinite(value)) return '?'
       if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(2)}M`
@@ -138,80 +203,73 @@ window.__ModuleLoader__.load({
       return String(Math.round(value))
     }
 
-    /** A three-marker bar: used, suggested line, and the system's own line. */
-    function BudgetBar({ usedPercent, suggestedPercent, systemPercent, label }) {
-      const marker = (left, color, text) => h('span', {
-        title: text,
-        style: { position: 'absolute', top: -2, bottom: -2, left: `${left}%`, width: 2, borderRadius: 1, background: color },
-      })
-      return h('div', {
-        role: 'img',
-        'aria-label': label,
-        style: {
-          position: 'relative',
-          height: 6,
-          margin: '18px 2px 6px',
-          borderRadius: 3,
-          background: 'var(--dsw-alias-interactive-bg-hover, rgba(0,0,0,.08))',
-        },
-      }, [
-        usedPercent === null ? null : h('span', {
-          key: 'used',
-          style: {
-            position: 'absolute',
-            left: 0,
-            top: 0,
-            bottom: 0,
-            width: `${usedPercent}%`,
-            borderRadius: 3,
-            background: ACCENT,
-            opacity: 0.75,
-          },
-        }),
-        suggestedPercent === null ? null : marker(suggestedPercent, 'var(--dsw-alias-label-primary, #1f1f1f)', `${Math.round(suggestedPercent)}%`),
-        systemPercent === null ? null : marker(systemPercent, 'var(--dsw-alias-state-warn-label, #b26a00)', `${Math.round(systemPercent)}%`),
-      ])
+    /** The menu's own 12px chevron, drawn inline so no icon module is required. */
+    function Chevron({ open }) {
+      return h('svg', {
+        className: open ? 'dsc-chevron dsc-chevronOpen' : 'dsc-chevron',
+        viewBox: '0 0 12 12',
+        'aria-hidden': 'true',
+      }, h('path', {
+        d: 'M4.5 2.5 L8 6 L4.5 9.5',
+        fill: 'none',
+        stroke: 'currentColor',
+        strokeWidth: 1,
+        strokeLinecap: 'round',
+        strokeLinejoin: 'round',
+      }))
     }
 
-    /** Range input; commits on release so one drag is one write. */
-    function PercentSlider({ value, min, max, disabled, onCommit, label }) {
+    /**
+     * One draggable track: the context bar is the slider, so the used fill and
+     * the threshold knob live on the same pixels the pointer drags.
+     */
+    function ThresholdTrack({ usedPercent, value, min, max, systemPercent, disabled, onDraft, onCommit, label }) {
       const [draft, setDraft] = useState(value)
       useEffect(() => { setDraft(value) }, [value])
       const commit = () => { if (draft !== value) onCommit(draft) }
-      return h('input', {
-        type: 'range',
-        min,
-        max,
-        step: 1,
-        value: draft,
-        disabled,
-        'aria-label': label,
-        onChange: (event) => { setDraft(Number(event.target.value)) },
-        onPointerUp: commit,
-        onPointerCancel: commit,
-        onKeyUp: commit,
-        onBlur: commit,
-        style: { width: '100%', accentColor: ACCENT, cursor: disabled ? 'default' : 'pointer' },
-      })
+      return h('div', { className: 'dsc-track' }, [
+        h('div', { key: 'bar', className: 'dsc-bar' }, [
+          usedPercent === null ? null : h('span', {
+            key: 'used',
+            className: 'dsc-barUsed',
+            style: { width: `${usedPercent}%` },
+            title: `${Math.round(usedPercent)}%`,
+          }),
+          systemPercent === null ? null : h('span', {
+            key: 'system',
+            className: 'dsc-barTick',
+            style: { left: `${systemPercent}%` },
+            title: `${Math.round(systemPercent)}%`,
+          }),
+          h('span', { key: 'knob', className: 'dsc-barKnob', style: { left: `${draft}%` } }),
+        ]),
+        h('input', {
+          key: 'range',
+          className: 'dsc-range',
+          type: 'range',
+          min,
+          max,
+          step: 1,
+          value: draft,
+          disabled,
+          'aria-label': label,
+          'aria-valuetext': `${draft}%`,
+          onChange: (event) => {
+            const next = Number(event.target.value)
+            setDraft(next)
+            onDraft(next)
+          },
+          onPointerUp: commit,
+          onPointerCancel: commit,
+          onKeyUp: commit,
+          onBlur: commit,
+        }),
+      ])
     }
 
     /** Small text button used by the retry paths. */
     function LinkButton({ onClick, children }) {
-      return h('button', {
-        type: 'button',
-        onClick,
-        style: {
-          alignSelf: 'flex-start',
-          padding: 0,
-          border: 0,
-          background: 'transparent',
-          color: ACCENT,
-          font: 'inherit',
-          fontSize: 11,
-          cursor: 'pointer',
-          textDecoration: 'underline',
-        },
-      }, children)
+      return h('button', { type: 'button', className: 'dsc-link', onClick }, children)
     }
 
     /**
@@ -220,11 +278,13 @@ window.__ModuleLoader__.load({
      */
     function SmartCompactRow(props) {
       const { sessionId, locked, useProjection, t } = props
+      ensureStyles()
       const pressure = useProjection('contextPressure')
       const [state, setState] = useState(null)
       const [failure, setFailure] = useState(null)
       const [open, setOpen] = useState(false)
       const [saving, setSaving] = useState(false)
+      const [draft, setDraft] = useState(null)
       const windowRef = useRef(undefined)
       const retried = useRef(undefined)
 
@@ -232,7 +292,7 @@ window.__ModuleLoader__.load({
         setFailure(null)
         const hint = windowRef.current === undefined ? '' : `&window=${Math.round(windowRef.current)}`
         return getJson(`${STATE_PATH}?sessionId=${encodeURIComponent(sessionId)}${hint}`)
-          .then((next) => { setState(next) })
+          .then((next) => { setState(next); setDraft(null) })
           .catch(() => { setFailure(t('panel.unavailable')) })
       }, [sessionId, t])
 
@@ -270,8 +330,21 @@ window.__ModuleLoader__.load({
       const unknownWindow = session === null || session.status === 'unknown-window'
       const tooSmall = session !== null && session.status === 'window-too-small'
       const rowDisabled = locked || session === null || tooSmall
+      const shown = draft ?? suggestedPercent ?? defaultPercent
+
+      /**
+       * Keep the menu open: the host closes it when focus leaves the card, and
+       * a mousedown on plain text would blur the trigger. Inputs keep their
+       * default so the range still drags.
+       */
+      const keepFocus = (event) => {
+        const target = event.target
+        if (target instanceof Element && target.closest('input') !== null) return
+        event.preventDefault()
+      }
 
       const choose = (next) => {
+        setDraft(null)
         if (next === 'default') return void apply({ kind: 'default' })
         if (next === 'off') return void apply({ kind: 'off' })
         return void apply({ kind: 'percent', percent: suggestedPercent ?? defaultPercent })
@@ -280,104 +353,68 @@ window.__ModuleLoader__.load({
       const summary = kind === 'off'
         ? t('row.off')
         : suggestedPercent === null
-          ? t('row.unavailable')
+          ? t('row.none')
           : `${usedPercent === null ? '—' : Math.round(usedPercent)}% / ${suggestedPercent}%`
 
-      const radio = (value, label, hint) => h('label', {
+      const radio = (value, label, hint) => h('button', {
         key: `radio-${value}`,
-        style: { display: 'flex', alignItems: 'flex-start', gap: 6, ...CAPTION, cursor: 'pointer' },
+        type: 'button',
+        role: 'radio',
+        'aria-checked': kind === value,
+        disabled: saving,
+        className: kind === value ? 'dsc-radio dsc-radioOn' : 'dsc-radio',
+        onClick: () => { choose(value) },
       }, [
-        h('input', {
-          key: 'input',
-          type: 'radio',
-          name: `smart-compact-${sessionId}`,
-          checked: kind === value,
-          disabled: saving,
-          onChange: () => { choose(value) },
-          style: { marginTop: 2, accentColor: ACCENT },
-        }),
-        h('span', { key: 'text', style: { display: 'flex', flexDirection: 'column', gap: 1 } }, [
-          h('span', { key: 'label', style: kind === value ? STRONG : undefined }, label),
-          hint === undefined ? null : h('span', { key: 'hint', style: DIMMED }, hint),
-        ]),
+        h('span', { key: 'dot', className: 'dsc-dot' }),
+        h('span', { key: 'text' }, hint === undefined ? label : `${label} · ${hint}`),
       ])
 
-      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, padding: '2px 2px 6px' } }, [
-        h('div', { key: 'row', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } }, [
-          h('button', {
-            key: 'toggle',
-            type: 'button',
-            'aria-expanded': open,
-            'aria-label': t('panel.open'),
-            disabled: rowDisabled,
-            onClick: () => { setOpen((value) => !value); if (!open) void load() },
-            style: {
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              flex: 1,
-              minWidth: 0,
-              padding: '4px 0',
-              border: 0,
-              background: 'transparent',
-              color: rowDisabled ? DIMMED.color : STRONG.color,
-              cursor: rowDisabled ? 'default' : 'pointer',
-              textAlign: 'left',
-              font: 'inherit',
-            },
-          }, [
-            h('span', { key: 'label', style: STRONG }, t('row.label')),
-            h('span', { key: 'value', style: { ...CAPTION, marginLeft: 'auto' } }, summary),
-            h('span', {
-              key: 'chevron',
-              style: { ...CAPTION, fontSize: 10, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms' },
-            }, '›'),
-          ]),
+      return h('div', { className: 'dsc-wrap', onMouseDown: keepFocus }, [
+        h('button', {
+          key: 'row',
+          type: 'button',
+          className: 'dsc-cell',
+          disabled: rowDisabled,
+          'aria-expanded': open,
+          onClick: () => { setOpen((value) => !value); if (!open) void load() },
+        }, [
+          h('span', { key: 'label', className: 'dsc-cellLabel' }, t('row.label')),
+          h('span', { key: 'value', className: 'dsc-cellValue' }, summary),
+          h(Chevron, { key: 'chevron', open }),
         ]),
-        failure === null ? null : h('div', { key: 'failure', style: { ...CAPTION, ...ERROR } }, failure),
-        failure === null ? null : h(LinkButton, { key: 'retry', onClick: () => { void load() } }, t('panel.retry')),
-        open ? h('div', { key: 'panel', style: { display: 'flex', flexDirection: 'column', gap: 8, padding: '2px 2px 4px' } }, [
-          h(BudgetBar, {
-            key: 'bar',
-            usedPercent,
-            suggestedPercent,
-            systemPercent: session && session.railPercent !== null ? session.railPercent : null,
-            label: t('panel.suggested'),
-          }),
-          h('div', { key: 'reading', style: { display: 'flex', justifyContent: 'space-between', gap: 8 } }, [
-            h('span', { key: 'used', style: CAPTION },
+        open ? h('div', { key: 'panel', className: 'dsc-panel' }, [
+          h('div', { key: 'reading', className: 'dsc-line' }, [
+            h('span', { key: 'used', className: 'dsc-caption' },
               `${t('panel.used')} ${tokens(usedTokens)} / ${tokens(windowSize)}`),
-            h('span', { key: 'suggested', style: CAPTION },
-              suggestedPercent === null ? '' : `${t('panel.suggested')} ${suggestedPercent}%`),
+            h('span', { key: 'value', className: 'dsc-num' },
+              `${shown}%`),
           ]),
           tooSmall
-            ? h('div', { key: 'too-small', style: CAPTION }, t('panel.windowTooSmall'))
-            : h(React.Fragment, { key: 'controls' }, [
-              radio('default', fill(t('panel.follow'), { percent: defaultPercent })),
-              h('div', { key: 'custom', style: { display: 'flex', flexDirection: 'column', gap: 4 } }, [
-                radio('custom', t('panel.custom'), kind === 'percent' && maxPercent < 99 ? fill(t('panel.cap'), { percent: maxPercent }) : undefined),
-                kind === 'percent'
-                  ? h(PercentSlider, {
-                    key: 'slider',
-                    value: suggestedPercent ?? defaultPercent,
-                    min: minPercent,
-                    max: maxPercent,
-                    disabled: saving || unknownWindow,
-                    label: t('panel.suggested'),
-                    onCommit: (percent) => { void apply({ kind: 'percent', percent }) },
-                  })
-                  : null,
-              ]),
-              radio('off', t('panel.off'), t('panel.offHint')),
-            ]),
-          session !== null && session.railPercent !== null
-            ? h('div', { key: 'system', style: DIMMED }, `${t('panel.system')} ${Math.round(session.railPercent)}%`)
-            : null,
+            ? h('div', { key: 'too-small', className: 'dsc-caption' }, t('panel.windowTooSmall'))
+            : h(ThresholdTrack, {
+              key: 'track',
+              usedPercent,
+              value: shown,
+              min: minPercent,
+              max: maxPercent,
+              systemPercent: session && session.railPercent !== null ? session.railPercent : null,
+              disabled: saving || unknownWindow || kind === 'off',
+              label: t('panel.suggested'),
+              onDraft: (next) => { setDraft(next) },
+              onCommit: (next) => { void apply({ kind: 'percent', percent: next }) },
+            }),
+          tooSmall ? null : h('div', { key: 'radios', style: { display: 'flex', flexDirection: 'column', gap: 4 } }, [
+            radio('default', fill(t('panel.follow'), { percent: defaultPercent })),
+            radio('custom', t('panel.custom'), kind === 'percent' && maxPercent < 99 ? fill(t('panel.cap'), { percent: maxPercent }) : undefined),
+            radio('off', t('panel.off'), t('panel.offHint')),
+          ]),
           session !== null && session.clamped
-            ? h('div', { key: 'capped', style: DIMMED }, fill(t('panel.capped'), { percent: session.percent }))
+            ? h('div', { key: 'capped', className: 'dsc-caption' }, fill(t('panel.capped'), { percent: session.percent }))
             : null,
-          unknownWindow ? h('div', { key: 'unknown', style: CAPTION }, t('panel.unknownWindow')) : null,
-          saving ? h('div', { key: 'saving', style: CAPTION }, t('panel.saving')) : null,
+          unknownWindow ? h('div', { key: 'unknown', className: 'dsc-caption' }, t('panel.unknownWindow')) : null,
+          saving ? h('div', { key: 'saving', className: 'dsc-caption' }, t('panel.saving')) : null,
+          failure === null ? null : h('div', { key: 'failure', className: 'dsc-caption dsc-error' }, failure),
+          failure === null ? null : h(LinkButton, { key: 'retry', onClick: () => { void load() } }, t('panel.retry')),
         ]) : null,
       ])
     }
@@ -388,16 +425,18 @@ window.__ModuleLoader__.load({
      */
     function SmartCompactSettings(props) {
       const { t } = props
+      ensureStyles()
       const [state, setState] = useState(null)
       const [failure, setFailure] = useState(null)
       const [saved, setSaved] = useState(false)
       const [loading, setLoading] = useState(true)
+      const [draft, setDraft] = useState(null)
       const timer = useRef(undefined)
 
       const load = useCallback(() => {
         setLoading(true)
         return getJson(STATE_PATH)
-          .then((next) => { setState(next); setFailure(null) })
+          .then((next) => { setState(next); setFailure(null); setDraft(null) })
           .catch(() => { setFailure(t('settings.unavailable')) })
           .finally(() => { setLoading(false) })
       }, [t])
@@ -416,31 +455,34 @@ window.__ModuleLoader__.load({
           .catch((error) => { setFailure(fill(t('settings.saveFailed'), { message: error.message })) })
       }
 
-      if (loading && state === null) return h('div', { style: CAPTION }, t('settings.loading'))
+      if (loading && state === null) return h('div', { className: 'dsc-caption' }, t('settings.loading'))
       if (state === null) {
-        return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, [
-          h('div', { key: 'title', style: STRONG }, t('settings.title')),
-          h('div', { key: 'failure', style: { ...CAPTION, ...ERROR } }, failure ?? ''),
+        return h('div', { className: 'dsc-page' }, [
+          h('div', { key: 'title', className: 'dsc-strong' }, t('settings.title')),
+          h('div', { key: 'failure', className: 'dsc-caption dsc-error' }, failure ?? ''),
           h(LinkButton, { key: 'retry', onClick: () => { void load() } }, t('settings.retry')),
         ])
       }
 
-      return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 460 } }, [
-        h('div', { key: 'title', style: STRONG }, t('settings.title')),
-        h('div', { key: 'description', style: CAPTION }, t('settings.description')),
-        h('div', { key: 'value', style: { ...STRONG, fontSize: 20 } }, `${state.defaultPercent}%`),
-        h(PercentSlider, {
-          key: 'slider',
-          value: state.defaultPercent,
+      return h('div', { className: 'dsc-page' }, [
+        h('div', { key: 'title', className: 'dsc-strong' }, t('settings.title')),
+        h('div', { key: 'description', className: 'dsc-caption' }, t('settings.description')),
+        h('div', { key: 'value', className: 'dsc-pageValue' }, `${draft ?? state.defaultPercent}%`),
+        h(ThresholdTrack, {
+          key: 'track',
+          usedPercent: null,
+          value: draft ?? state.defaultPercent,
           min: state.minPercent,
           max: 90,
+          systemPercent: null,
           disabled: false,
           label: t('settings.title'),
+          onDraft: (next) => { setDraft(next) },
           onCommit: commit,
         }),
-        h('div', { key: 'clamp', style: DIMMED }, t('settings.clampHint')),
-        saved ? h('div', { key: 'saved', style: CAPTION }, t('settings.saved')) : null,
-        failure === null ? null : h('div', { key: 'failure', style: { ...CAPTION, ...ERROR } }, failure),
+        h('div', { key: 'clamp', className: 'dsc-caption' }, t('settings.clampHint')),
+        saved ? h('div', { key: 'saved', className: 'dsc-caption' }, t('settings.saved')) : null,
+        failure === null ? null : h('div', { key: 'failure', className: 'dsc-caption dsc-error' }, failure),
       ])
     }
 
