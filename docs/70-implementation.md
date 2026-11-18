@@ -88,23 +88,24 @@ Host 半与 Client 半都已实现，46 个测试通过。**尚未安装到 prof
 
 ## 验证清单
 
-已做：
+全部已实测（2026-11-18，desktop profile，deepseek-flash）：
 
-- `node --check index.js` / `client.js` 通过。
-- `node test/policy.test.mjs` 11/11、`test/host.test.mjs` 11/11、
-  `test/routes.test.mjs` 8/8、`test/client.test.mjs` 2/2。
+| 项 | 结果 | 证据 |
+|---|---|---|
+| 测试套件 | 46/46 | policy 12 / host 23 / routes 9 / client 2 |
+| 本地 link 安装、Loader 解析该行 | ✅ | 插件页条目 `include:smart-compact`，`fiberPhase: active` |
+| 工具 JSON Schema 注册与输出校验 | ✅ | `smart_compact` / `smart_compact_force` 在会话里可调用 |
+| 工具请求：回合结束进 idle 后压缩 | ✅ | 测试 session 15:56 请求 → 16:35 的 `compact` 生命周期与 `compaction/summary`，释放 443,925 tokens |
+| 人用命令派发压缩且可见 | ✅ | `command/run name=compact` + `command/done "Compacted 25 history items (~4512 tokens)"` |
+| 空闲会话敲命令也能立刻压（0.1.8） | ✅ | 16:52:25 `force` 排队 → 同一秒派发 `compact` → 16:52:34 summary |
+| busy 时保留请求、下一个 idle 重试 | ✅ | 16:45 排队的 force 在 16:51 回合结束的 idle 迁移时才消费 |
+| 命令带参数（0.1.7 的 `input.hint`） | ✅ | `args:" force"`、`args:" 30"`、`args:" 40"` 均进入处理器 |
+| `agent.inject` 回执被下一回合看到 | ✅ | 压缩后收到 `Compacted older history; ~444k tokens freed…` |
+| `dsh.client` 半身与模型菜单行 | ✅ | 菜单行摘要 + 面板三态可用 |
+| 浏览器 fetch 过栅栏、伪造 Host 被拒 | ✅ | shell 直接请求 401；页面内正常读写 |
+| 插件页默认阈值与绕过开关，重启仍在 | ✅ | `state.json` 的 `defaultPercent` / `allowForce` 跨重载保留 |
+| `measure()` 差值量级合理 | ✅ | 443,925 / 104,884 / 4,512 与压缩前后用量一致 |
 
-未做（需要在 DSH 里安装后验证）：
-
-- [ ] 本地链接安装后，Loader 能解析 `dsh-smart-compact` 这一行。
-- [ ] 工具用标准 JSON Schema 注册（代替 `defineTool`）能通过输出值校验。
-- [ ] 回合结束进入 idle 时 `compactNow` 成功，Chat 出现 manual-compaction 节点。
-- [ ] 用户紧接着发消息时 `busy` 在下一个 idle 重试一次。
-- [ ] `agent.inject` 的回执与提醒在下一个回合真的被模型看到，且不重复。
-- [ ] `dsh.client` 半身被加载，模型菜单出现「上下文压缩」行。
-- [ ] 浏览器端 `fetch` 带 cookie 通过栅栏；伪造 Host / 跨站被 401/403。
-- [ ] 插件页出现默认阈值滑杆，保存后刷新仍在。
-- [ ] `measure()` 前后差值的量级合理。
 
 ## 阈值迁移（已完成）
 

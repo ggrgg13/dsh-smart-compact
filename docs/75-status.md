@@ -17,6 +17,18 @@
 
 测试：46 个（policy 12 / host 23 / routes 9 / client 2）。
 
+**验收（2026-11-18 16:55，测试 session `b3d0…` 实测）**
+
+两条入口都跑通，且都能在对话里看见：
+
+- 工具：15:56 `smart_compact(request)` → 16:35 `command/run compact` →
+  `compaction/summary` → `command/done "Compacted 246 history items (~104884 tokens)"`；
+  本会话那次释放 443,925 tokens。
+- 命令：16:52:25 空闲时 `/smart-compact force` → 同一秒派发 `compact` →
+  16:52:34 summary（0.1.8 的 `kickIfIdle` 生效；0.1.8 之前同一动作要等到下一个回合结束）。
+- 带参数：`args:" force"` / `" 30"` / `" 40"` 全部进入处理器（0.1.7 的 `input.hint`）。
+- busy：16:45 排队的请求在 16:51 回合结束的 idle 迁移时才消费，没有丢。
+
 ## 0.1.7：命令声明 `input.hint`，带参数的行才会进命令通道
 
 现象：用户敲 `/smart-compact force`、`/smart-compact status`，两条都以普通消息进会话

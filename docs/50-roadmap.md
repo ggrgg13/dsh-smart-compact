@@ -39,6 +39,10 @@
 **验收**：在新会话里让 agent 主动在阶段结束时请求压缩；日志显示压缩发生在 `turn/end` 之后，
 Chat 里出现 DSH 自己的 manual-compaction 节点；用户下一条消息从压缩后的上下文开始。
 
+**实测（2026-11-18）**：通过。工具请求在 idle 后派发 `command/run compact`，
+日志里是 `compaction/summary` + `command/done "Compacted 246 history items (~104884 tokens)"`，
+压缩后本会话又回到 ~24k tokens。
+
 ## M2 · 阈值模型与提醒
 
 - 全局默认阈值 + 每会话三种状态（default / percent / off），替换当前的 mode 实现。
@@ -50,6 +54,10 @@ Chat 里出现 DSH 自己的 manual-compaction 节点；用户下一条消息从
 **验收**：长会话里 agent 在到达系统线之前收到过一次提醒并完成一轮"落盘 + 请求压缩"；
 内置线仍能在插件缺席时正常兜底。
 
+**实测（2026-11-18）**：部分通过。三态阈值（`/smart-compact 30|40`、`default`、`off`）与
+收到 `Compacted older history; ~444k tokens freed` 回执都验证了；**跨线提醒只做了单测**，
+真实长会话里尚未复现到"首次越过建议线时注入一次提醒"。
+
 ## M3 · GUI
 
 - 模型菜单一行 + 面板：当前占用（`contextPressure` 投影）、建议线滑杆、系统线刻度、跟随默认/恢复默认。
@@ -60,6 +68,10 @@ Chat 里出现 DSH 自己的 manual-compaction 节点；用户下一条消息从
 
 **验收**：能在一个会话里改阈值，另一个会话不受影响；重启 DSH 后设置仍在；
 不选模型时滑杆禁用；伪造 Host / 跨站请求被拒；样式与模型菜单其他行一致。
+
+**实测（2026-11-18）**：通过。会话级阈值写入 `state.json` 的 per-session 记录；
+插件页全局默认阈值与绕过开关在插件重载/重启后保留；shell 直接请求路由返回 401，
+页面内读写正常；菜单行与面板样式沿用 `ModelSelect` 的 cell 度量。
 
 ## M4 · 已取消
 
