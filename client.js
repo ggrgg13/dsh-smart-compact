@@ -223,10 +223,13 @@ window.__ModuleLoader__.load({
      * One draggable track: the context bar is the slider, so the used fill and
      * the threshold knob live on the same pixels the pointer drags.
      */
-    function ThresholdTrack({ usedPercent, value, min, max, systemPercent, disabled, onDraft, onCommit, label }) {
+    function ThresholdTrack({ usedPercent, value, base, min, max, systemPercent, disabled, onDraft, onCommit, label }) {
       const [draft, setDraft] = useState(value)
       useEffect(() => { setDraft(value) }, [value])
-      const commit = () => { if (draft !== value) onCommit(draft) }
+      // Compare against the committed value, not `value`: the parent mirrors the
+      // draft into it while dragging, so a comparison with `value` would always
+      // be equal and the release would never save.
+      const commit = () => { if (draft !== base) onCommit(draft) }
       return h('div', { className: 'dsc-track' }, [
         h('div', { key: 'bar', className: 'dsc-bar' }, [
           usedPercent === null ? null : h('span', {
@@ -321,7 +324,12 @@ window.__ModuleLoader__.load({
         return postJson(SESSION_PATH, { sessionId, threshold })
           .then((next) => { setState((current) => (current === null ? current : { ...current, session: next })) })
           .catch((error) => { setFailure(fill(t('panel.saveFailed'), { message: error.message })) })
-          .finally(() => { setSaving(false) })
+          .finally(() => {
+            setSaving(false)
+            // The server value is authoritative again: a failed save reverts the
+            // knob to it, and a successful one already carries the new value.
+            setDraft(null)
+          })
       }, [sessionId, t])
 
       const defaultPercent = state === null ? 60 : state.defaultPercent
@@ -402,6 +410,7 @@ window.__ModuleLoader__.load({
               key: 'track',
               usedPercent,
               value: shown,
+              base: suggestedPercent ?? defaultPercent,
               min: minPercent,
               max: maxPercent,
               systemPercent: session && session.railPercent !== null ? session.railPercent : null,
@@ -459,6 +468,7 @@ window.__ModuleLoader__.load({
             timer.current = setTimeout(() => { setSaved(false) }, 1600)
           })
           .catch((error) => { setFailure(fill(t('settings.saveFailed'), { message: error.message })) })
+          .finally(() => { setDraft(null) })
       }
 
       if (loading && state === null) return h('div', { className: 'dsc-caption' }, t('settings.loading'))
@@ -478,6 +488,7 @@ window.__ModuleLoader__.load({
           key: 'track',
           usedPercent: null,
           value: draft ?? state.defaultPercent,
+          base: state.defaultPercent,
           min: state.minPercent,
           max: 90,
           systemPercent: null,
