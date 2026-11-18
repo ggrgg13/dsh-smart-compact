@@ -353,6 +353,7 @@ window.__ModuleLoader__.load({
       }
 
       const choose = (next) => {
+        if (saving) return
         setDraft(null)
         setPendingKind(next)
         const threshold = next === 'default'
