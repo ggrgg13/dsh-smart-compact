@@ -7,6 +7,12 @@
 
 - 服务：`ctx.compaction`，三个抽象方法 `compactIfNeeded` / `compactNow` / `compactRegion`
   （`@deepseek-ai/dsh-compaction`）。
+- **服务在 preset 作用域，不在 Host 平面**（2026-11-18 实测）：
+  `dsh-web-app/cordis.patch.yml` 把 `compaction-basic` 在 Host 平面置 `disabled: true`，
+  改由每个 agent preset 挂载（`presets/*.patch.yml`）；内置 `/compact` 命令同样由 preset 挂载。
+  因此**宿主插件里 `ctx.get('compaction')` 是 undefined**，必须从 agent 作用域取：
+  `agent.ctx.get('compaction')`。插件第一次真实触发压缩时报
+  "no compaction backend is mounted" 就是这个原因；版本 0.1.3 起按 agent 作用域解析。
 - 实现：`BasicCompactionEngine`（`@deepseek-ai/dsh-compaction-basic/src/index.ts`）。
   `auto` 默认 `true`。自动触发点有三处：
   - `agent/pre-step`：`compactIfNeeded(agent, 'pressure', signal)`；

@@ -19,7 +19,7 @@ let sessionCounter = 0
  * Harness runtime. Each context gets a fresh session id because policy state is
  * persisted per session and would otherwise leak between cases.
  */
-function createContext({ pressure: initialPressure = 700_000, withRoutes = false } = {}) {
+function createContext({ pressure: initialPressure = 700_000, withRoutes = false, compactionIn = 'host' } = {}) {
   const sessionId = `session-${++sessionCounter}`
   const registered = { section: null, tool: null, command: null, listeners: {}, routes: new Map() }
   const notices = []
@@ -27,6 +27,14 @@ function createContext({ pressure: initialPressure = 700_000, withRoutes = false
   const compactionCalls = []
   let pressure = initialPressure
   let agent
+  const compactionBackend = {
+    config: { thresholdRatio: 0.8, headroomTokens: 65_536 },
+    async compactNow(agent, signal) {
+      compactionCalls.push({ agent, signal })
+      pressure = Math.max(0, pressure - 600_000)
+      return { compactionId: 'c1' }
+    },
+  }
   const ctx = {
     get(name) {
       if (name === 'tokenMeter') {
@@ -36,14 +44,7 @@ function createContext({ pressure: initialPressure = 700_000, withRoutes = false
         }
       }
       if (name === 'compaction') {
-        return {
-          config: { thresholdRatio: 0.8, headroomTokens: 65_536 },
-          async compactNow(agent, signal) {
-            compactionCalls.push({ agent, signal })
-            pressure = Math.max(0, pressure - 600_000)
-            return { compactionId: 'c1' }
-          },
-        }
+        return compactionIn === 'host' ? compactionBackend : undefined
       }
       if (name === 'agents') {
         return { get: (id) => (id === sessionId ? agent : undefined) }
@@ -87,6 +88,9 @@ function createContext({ pressure: initialPressure = 700_000, withRoutes = false
       messages.push(input)
       notices.push(input.content.map(block => block.text).join(''))
     },
+    // The Host plane has no compaction service; dsh-web-app mounts the backend
+    // per agent preset, so the agent scope is the one that resolves it.
+    ctx: compactionIn === 'agent' ? { get: (name) => (name === 'compaction' ? compactionBackend : undefined) } : undefined,
   }
   const dispose = apply(ctx)
   return { ctx, agent, sessionId, registered, notices, messages, compactionCalls, dispose }
@@ -160,6 +164,25 @@ test('request above the line runs at idle, not during the call', async () => {
   dispose()
 })
 
+test('the backend is resolved from the agent scope when the host plane has none', async () => {
+  const { registered, agent, notices, compactionCalls, dispose } = createContext({ compactionIn: 'agent' })
+  const result = await registered.tool.execute({ action: 'request' }, { agent })
+  assert.match(result.text, /Queued for the end of this turn/)
+  await registered.listeners['agent/status']({ agent, status: 'idle' })
+  assert.equal(compactionCalls.length, 1, 'the preset-owned backend must run')
+  assert.match(notices[0], /Compacted older history/)
+  dispose()
+})
+
+test('without any backend the request is dropped and reported', async () => {
+  const { registered, agent, notices, compactionCalls, dispose } = createContext({ compactionIn: 'none' })
+  await registered.tool.execute({ action: 'request' }, { agent })
+  await registered.listeners['agent/status']({ agent, status: 'idle' })
+  assert.equal(compactionCalls.length, 0)
+  assert.match(notices[0], /no compaction backend is mounted/)
+  dispose()
+})
+
 test('off refuses requests but keeps reporting the budget', async () => {
   const { registered, agent, compactionCalls, dispose } = createContext()
   const status = registered.command.handler({ agent, rawInput: 'off' })
@@ -189,8 +212,7 @@ test('default and reset return the session to the plugin default', async () => {
   dispose()
 })
 
-test('crossing the suggested line notifies the agent once per crossing', async () => {
-  const { registered, agent, notices, dispose } = createContext()
+test('crossing the suggested line notifies the agent once per crossing', async () => {  const { registered, agent, notices, dispose } = createContext()
   const next = () => 'next'
   await registered.listeners['agent/pre-step']({ agent }, next)
   await registered.listeners['agent/pre-step']({ agent }, next)

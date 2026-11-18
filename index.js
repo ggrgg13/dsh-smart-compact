@@ -109,12 +109,27 @@ export function apply(ctx) {
     }
   }
 
+  /**
+   * Resolve the compaction backend for one agent.
+   *
+   * The Host plane deliberately has no compaction service: `dsh-web-app` disables
+   * `compaction-basic` there and each agent preset mounts its own backend, so the
+   * service is only reachable from the agent's scope (`agent.ctx`). The built-in
+   * `/compact` command works for the same reason — it is mounted by the preset.
+   *
+   * @param agent owning agent, when one is known
+   * @returns the compaction service, or undefined without a backend
+   */
+  function compactionFor(agent) {
+    return ctx.get('compaction') ?? agent?.ctx?.get?.('compaction')
+  }
+
   /** Measure one session against its threshold. */
-  function evaluate(session, threshold, windowHint) {
+  function evaluate(session, threshold, agent, windowHint) {
     const meter = ctx.get('tokenMeter')
     const context = session?.requestContext?.()
     const header = session?.requestHeader?.()
-    const config = ctx.get('compaction')?.config ?? {}
+    const config = compactionFor(agent)?.config ?? {}
     const budget = computeBudget({
       window: context?.contextWindow ?? (Number.isFinite(windowHint) && windowHint > 0 ? windowHint : undefined),
       reserved: header?.config?.maxTokens ?? 0,
@@ -181,14 +196,14 @@ export function apply(ctx) {
     if (running.has(agent.id)) return
     const rec = record(agent.id)
     if (!rec?.pending) return
-    const compaction = ctx.get('compaction')
+    const compaction = compactionFor(agent)
     if (!compaction) {
       rec.pending = null
       save()
       await notify(agent, 'Compaction request dropped: no compaction backend is mounted.')
       return
     }
-    const current = evaluate(agent.session, thresholdOf(rec))
+    const current = evaluate(agent.session, thresholdOf(rec), agent)
     if (current.budget.status === 'off') {
       rec.pending = null
       save()
@@ -288,7 +303,7 @@ export function apply(ctx) {
         const agent = exec.agent
         if (!agent) throw new Error('smart_compact requires an owning agent session')
         const rec = ensure(agent.id)
-        const current = evaluate(agent.session, thresholdOf(rec))
+        const current = evaluate(agent.session, thresholdOf(rec), agent)
         const line = reading(current)
         if (args.action === 'check') return { text: line }
         if (current.budget.status === 'off') {
@@ -340,7 +355,7 @@ export function apply(ctx) {
         : threshold.kind === 'percent' ? `自定义 ${threshold.percent}%` : `跟随默认 ${state.defaultPercent}%`)
 
       if (first === undefined || first === 'status') {
-        const current = evaluate(agent.session, thresholdOf(rec))
+        const current = evaluate(agent.session, thresholdOf(rec), agent)
         return {
           kind: 'success',
           text: `阈值 ${shapeOf(rec.threshold)} · ${describeBudgetZh(current)} · 压缩请求：${rec.pending ? '已排队' : '无'}`,
@@ -364,7 +379,7 @@ export function apply(ctx) {
       }
       rec.crossed = false
       save()
-      const current = evaluate(agent.session, thresholdOf(rec))
+      const current = evaluate(agent.session, thresholdOf(rec), agent)
       return { kind: 'success', text: `阈值 ${shapeOf(rec.threshold)} · ${describeBudgetZh(current)}` }
     },
   }))
@@ -378,7 +393,7 @@ export function apply(ctx) {
     const rec = record(id)
     const threshold = thresholdOf(rec)
     const agent = ctx.get('agents')?.get?.(id)
-    const { budget } = evaluate(agent?.session, threshold, windowHint)
+    const { budget } = evaluate(agent?.session, threshold, agent, windowHint)
     return {
       id,
       threshold,
@@ -432,7 +447,7 @@ export function apply(ctx) {
       const rec = record(agent.id)
       const threshold = thresholdOf(rec)
       if (threshold.kind !== 'off' && !rec?.pending) {
-        const current = evaluate(agent.session, threshold)
+        const current = evaluate(agent.session, threshold, agent)
         const line = current.budget.thresholdTokens
         if (line !== null && current.pressure >= line) {
           if (!rec?.crossed) {
