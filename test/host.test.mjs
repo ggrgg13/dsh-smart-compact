@@ -23,6 +23,7 @@ function createContext({ pressure: initialPressure = 700_000, withRoutes = false
   const sessionId = `session-${++sessionCounter}`
   const registered = { section: null, tool: null, command: null, listeners: {}, routes: new Map() }
   const notices = []
+  const messages = []
   const compactionCalls = []
   let pressure = initialPressure
   let agent
@@ -77,10 +78,18 @@ function createContext({ pressure: initialPressure = 700_000, withRoutes = false
       requestContext: () => ({ contextWindow: WINDOW }),
       requestHeader: () => ({ config: { maxTokens: RESERVED } }),
     },
-    inject: async (input) => { notices.push(input.content.map(block => block.text).join('')) },
+    /**
+     * The loop appends exactly this object as the durable `user/message` event
+     * and as the provider request entry, so the mock records it verbatim; a
+     * shape assertion lives in its own test rather than failing every case.
+     */
+    inject: async (input) => {
+      messages.push(input)
+      notices.push(input.content.map(block => block.text).join(''))
+    },
   }
   const dispose = apply(ctx)
-  return { ctx, agent, sessionId, registered, notices, compactionCalls, dispose }
+  return { ctx, agent, sessionId, registered, notices, messages, compactionCalls, dispose }
 }
 
 /** Drive one registered route the way the browser would. */
@@ -188,6 +197,25 @@ test('crossing the suggested line notifies the agent once per crossing', async (
   assert.equal(notices.length, 1)
   assert.match(notices[0], /suggested compaction line/)
   assert.match(notices[0], /smart_compact\(action: "request"\)/)
+  dispose()
+})
+
+test('an injected notice is a complete user message the loop can persist', async () => {
+  const { registered, agent, messages, dispose } = createContext()
+  await registered.listeners['agent/pre-step']({ agent }, () => 'next')
+  assert.equal(messages.length, 1)
+  const [message] = messages
+  // The loop copies this object into both the durable event and the request;
+  // a missing role broke the provider (`missing field role`) and the stored
+  // session (`message must have role "user"`).
+  assert.equal(message.role, 'user')
+  assert.match(message.id, /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u)
+  assert.equal(message.content.length, 1)
+  assert.equal(message.content[0].type, 'text')
+  assert.equal(message.source.kind, 'smart-compact')
+  assert.equal(message.source.form, 'notice')
+  assert.ok(message.source.summary.length > 0)
+  assert.ok(message.source.summary.length <= 120, 'a notice summary stays within the Harness bound')
   dispose()
 })
 

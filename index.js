@@ -9,6 +9,7 @@
  * @module dsh-smart-compact
  */
 
+import { randomUUID } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -34,6 +35,9 @@ Compact at a boundary you chose: a phase is finished, notes are written, or you 
 If the window is filling and real work remains, compact before the system does it for you; if the task is nearly done, finish first. Persist decisions, paths and the next step before you request it.`
 
 const TOOL_DESCRIPTION = 'Read the context budget, or request compaction of older history. A request runs after this turn ends, never mid-turn; it keeps only the most recent message and costs one summarization call.'
+
+/** Same bound the Harness applies to a `notice` source summary (`boundContextSummary`). */
+const NOTICE_SUMMARY_MAX_CHARS = 120
 
 const STATE_FILE = join(
   process.env.DSH_PROFILE_DIR ?? join(homedir(), '.dsh'),
@@ -142,10 +146,32 @@ export function apply(ctx) {
     return describeBudget({ pressure, budget, reclaimable })
   }
 
+  /**
+   * Build one model-facing notice as a *complete* user message.
+   *
+   * `agent.inject()` takes a whole `UserMessage`, not a bag of `content` and
+   * `source`: the loop appends the object it is given as both the durable
+   * `user/message` event and the provider request entry. A message without
+   * `role: 'user'` is therefore rejected by the provider (`missing field role`)
+   * and makes the stored session fail validation on the next load
+   * (`message must have role "user"`); `id` is required for the same reason.
+   */
+  function noticeMessage(text, summary) {
+    const bound = summary.length <= NOTICE_SUMMARY_MAX_CHARS
+      ? summary
+      : `${summary.slice(0, NOTICE_SUMMARY_MAX_CHARS - 1)}…`
+    return {
+      id: randomUUID(),
+      role: 'user',
+      content: [{ type: 'text', text }],
+      source: { kind: 'smart-compact', form: 'notice', summary: bound },
+    }
+  }
+
   /** Tell the agent something once, without waking an idle conversation. */
-  async function notify(agent, text) {
+  async function notify(agent, text, summary = text) {
     try {
-      await agent.inject({ content: [{ type: 'text', text }], source: { kind: 'smart-compact' } })
+      await agent.inject(noticeMessage(text, summary))
     } catch {
       // A notification is advisory; never let it fail the surrounding work.
     }
