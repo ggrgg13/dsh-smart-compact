@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "智能压缩",
+    "description": "让 agent 在回合边界主动请求上下文压缩，水位线跟随 Harness 自身的压缩配置。",
+    "detail": "docs/DETAIL.md"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "name": "@local/dsh-smart-compact",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Agent-requested context compaction at turn boundaries, with a policy derived from DeepSeek Harness' own compaction settings.",
+  "type": "module",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "policy.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "docs",
+    "icon.svg",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node test/policy.test.mjs && node test/host.test.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  }
+}

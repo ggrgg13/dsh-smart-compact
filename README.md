@@ -5,7 +5,8 @@
 
 ## 状态
 
-仅规划，**尚无代码**。本仓库当前只有 `docs/`。设计基于实际安装的 DSH 0.2.2-rc.3
+Host 半已实现，14 个单元/集成测试通过；**尚未安装到 profile**，GUI 与 action cards 未做。
+实现细节与未验证项见 `docs/70-implementation.md`。设计基于实际安装的 DSH 0.2.2-rc.3
 （Desktop / profile `desktop`）核对，事实清单见 `docs/10-facts.md`。
 
 ## 一句话结论
@@ -24,6 +25,7 @@
 | `docs/40-gui.md` | GUI 位置、默认策略、agent 一键建议卡 |
 | `docs/50-roadmap.md` | 里程碑、风险、验收标准 |
 | `docs/60-decisions.md` | 决策记录（含被否决的方案） |
+| `docs/70-implementation.md` | 已实现的 Host 半、实现期决定、验证与未验证项 |
 
 ## 预期形态
 

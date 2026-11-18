@@ -1,0 +1,5 @@
+# The host half is a plain Cordis plugin. The client half (model menu session
+# options) is not implemented yet; see docs/50-roadmap.md (M3).
+- insert:
+    - id: smart-compact
+      name: '@local/dsh-smart-compact'
