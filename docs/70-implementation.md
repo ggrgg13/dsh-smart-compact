@@ -66,6 +66,8 @@ Host 半已实现并通过 14 个单元/集成测试。**尚未安装到 profile
 
 未做（需要在 DSH 里安装后验证）：
 
+- [ ] 本地链接安装后，Loader 能解析 `@local/dsh-smart-compact` 这一行。
+- [ ] 工具用标准 JSON Schema 注册（代替 `defineTool`）能通过输出值校验。
 - [ ] 安装后工具真的出现在 agent 的工具列表里。
 - [ ] 回合结束进入 idle 时 `compactNow` 成功，Chat 出现 manual-compaction 节点。
 - [ ] 用户紧接着发消息时 `busy` 是否按预期重试一次。
