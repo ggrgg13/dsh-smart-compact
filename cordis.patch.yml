@@ -3,4 +3,4 @@
 # half, which contributes the model-menu row and the plugin page control.
 - insert:
     - id: smart-compact
-      name: '@local/dsh-smart-compact'
+      name: dsh-smart-compact

@@ -1,6 +1,6 @@
 {
   "name": "dsh-smart-compact",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Agent-requested context compaction at turn boundaries, with a per-session suggested threshold kept below the Harness' own compaction rail.",
   "license": "MIT",
   "type": "module",
