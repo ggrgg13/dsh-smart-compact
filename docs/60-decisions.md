@@ -103,7 +103,7 @@ subagent 继承 mode 但不共享 pending。
 **Context**：DSH 的工具设计倾向"相关操作共用一个工具 + action 参数"，
 且每个工具名都会进入首轮 prompt 成本。
 
-**Decision**：一个 `compact_context` 工具，`action: "check" | "request"`。
+**Decision**：一个 `smart_compact` 工具，`action: "check" | "request"`。
 
 **Consequences**：
 - 少一个工具声明，schema 更短。

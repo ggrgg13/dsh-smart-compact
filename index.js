@@ -17,6 +17,7 @@ import {
   MIN_PERCENT,
   computeBudget,
   describeBudget,
+  describeBudgetZh,
   formatTokens,
   migrateState,
   normalizeThreshold,
@@ -25,7 +26,7 @@ import {
 export const name = 'smart-compact'
 export const inject = ['tools', 'commands', 'systemPrompt']
 
-const SECTION = `You can compact your own history with the \`compact_context\` tool.
+const SECTION = `You can compact your own history with the \`smart_compact\` tool.
 Compaction replaces older history with a structured summary and keeps only the most recent message; anything not on disk is at risk.
 
 Compact at a boundary you chose: a phase is finished, notes are written, or you are switching to an unrelated subtask. Do not compact mid-edit, mid-diagnosis, or while the plan exists only in the conversation. Never cut a turn short to compact.
@@ -219,7 +220,9 @@ export function apply(ctx) {
       rec.attempts = 0
       rec.last = { at: Date.now(), status: 'failed', freedTokens: 0 }
       save()
-      await notify(agent, `Compaction failed (${code ?? 'error'}); the attempt is recorded in the session log.`)
+      // `compactNow` reports every failure as `busy`, so the code says nothing
+      // useful to the model; keep the notice honest and non-specific.
+      await notify(agent, 'Compaction did not run this time (busy or failed); history is unchanged.')
     } finally {
       running.delete(agent.id)
       controllers.delete(controller)
@@ -228,7 +231,7 @@ export function apply(ctx) {
 
   function toolDefinition() {
     return {
-      name: 'compact_context',
+      name: 'smart_compact',
       description: TOOL_DESCRIPTION,
       parameters: {
         type: 'object',
@@ -257,15 +260,14 @@ export function apply(ctx) {
       },
       async execute(args, exec) {
         const agent = exec.agent
-        if (!agent) throw new Error('compact_context requires an owning agent session')
+        if (!agent) throw new Error('smart_compact requires an owning agent session')
         const rec = ensure(agent.id)
         const current = evaluate(agent.session, thresholdOf(rec))
         const line = reading(current)
         if (args.action === 'check') return { text: line }
         if (current.budget.status === 'off') {
           return { text: `Not queued: compaction is turned off for this session. ${line}` }
-        }
-        if (rec.pending) {
+        }        if (rec.pending) {
           return { text: `Already queued for the end of this turn. ${line}` }
         }
         if (current.budget.thresholdTokens === null) {
@@ -273,14 +275,14 @@ export function apply(ctx) {
         }
         if (current.pressure < current.budget.thresholdTokens) {
           return {
-            text: `Not queued: ${line} is below the suggested watermark; no compaction needed yet.`,
+            text: `Not queued: ${line} is below the suggested line; no compaction needed yet.`,
           }
         }
         rec.pending = { requestedAt: Date.now(), reason: typeof args.reason === 'string' ? args.reason : '' }
         rec.attempts = 0
         save()
         return {
-          text: `Queued for the end of this turn. It runs only if pressure is still above the watermark.\n${line}\nBefore you finish: write decisions, file paths and the next step to disk.`,
+          text: `Queued for the end of this turn. It runs only if pressure is still above the suggested line.\n${line}\nBefore you finish: write decisions, file paths and the next step to disk.`,
         }
       },
     }
@@ -297,7 +299,7 @@ export function apply(ctx) {
   disposers.push(ctx.commands.register({
     definitionId: 'smart-compact',
     name: 'smart-compact',
-    description: 'Show or change this session\'s context compaction threshold',
+    description: '查看或修改本会话的上下文压缩阈值',
     handler(invocation) {
       const agent = invocation.agent
       const rec = ensure(agent.id)
@@ -307,14 +309,15 @@ export function apply(ctx) {
         const parsed = Number.parseInt(String(value ?? '').replace(/%$/, ''), 10)
         return Number.isFinite(parsed) ? Math.max(MIN_PERCENT, Math.min(99, parsed)) : undefined
       }
+      const shapeOf = (threshold) => (threshold.kind === 'off'
+        ? '关闭'
+        : threshold.kind === 'percent' ? `自定义 ${threshold.percent}%` : `跟随默认 ${state.defaultPercent}%`)
 
       if (first === undefined || first === 'status') {
         const current = evaluate(agent.session, thresholdOf(rec))
-        const shape = rec.threshold?.kind ?? 'default'
-        const pending = rec.pending ? 'yes' : 'no'
         return {
           kind: 'success',
-          text: `threshold ${shape} · ${reading(current)} · pending ${pending}`,
+          text: `阈值 ${shapeOf(rec.threshold)} · ${describeBudgetZh(current)} · 压缩请求：${rec.pending ? '已排队' : '无'}`,
         }
       }
       if (first === 'off') {
@@ -328,7 +331,7 @@ export function apply(ctx) {
         if (percent === undefined) {
           return {
             kind: 'error',
-            text: 'Usage: /smart-compact [status|off|on|default|<percent 30-99>]',
+            text: '用法：/smart-compact [status|off|default|<百分比 30-99>]',
           }
         }
         rec.threshold = { kind: 'percent', percent }
@@ -336,7 +339,7 @@ export function apply(ctx) {
       rec.crossed = false
       save()
       const current = evaluate(agent.session, thresholdOf(rec))
-      return { kind: 'success', text: `${rec.threshold.kind} · ${reading(current)}` }
+      return { kind: 'success', text: `阈值 ${shapeOf(rec.threshold)} · ${describeBudgetZh(current)}` }
     },
   }))
 
@@ -410,7 +413,7 @@ export function apply(ctx) {
             const target = rec ?? ensure(agent.id)
             target.crossed = true
             save()
-            await notify(agent, `Context passed its suggested compaction watermark (${reading(current)}). If you are finishing a phase, write handoff notes and call compact_context(action: "request").`)
+            await notify(agent, `Context passed its suggested compaction line (${reading(current)}). If you are finishing a phase, write handoff notes and call smart_compact(action: "request").`)
           }
         } else if (rec?.crossed && (line === null || current.pressure < line * 0.9)) {
           rec.crossed = false

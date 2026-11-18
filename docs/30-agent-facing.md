@@ -5,9 +5,10 @@
 | 决策 | 谁拥有 | 理由 |
 |---|---|---|
 | **什么时候压**（时机） | agent | 只有它知道当前处在编辑、诊断还是阶段边界 |
-| **多早算该压**（阈值/水位） | 用户 + 插件策略 | 本质是"省钱 vs 保细节"的偏好；agent 估不准 token，也会把它当成本地玩具 |
+| **多早算该压**（阈值） | 用户 | 本质是"省钱 vs 保细节"的偏好；agent 估不准 token，也拿不到压缩效果的反馈 |
 
-agent 可以在明显不匹配时**提议改模式**（见 `40-gui.md` 的建议卡），但不能在会话里偷偷改水位。
+agent 只决定时机，**不改也不建议改阈值**（ADR-10：模型的建议会把用户引向错误的设置）。
+阈值由用户在模型菜单或插件页设置，agent 只能读取它。
 
 ## agent 该考虑什么
 
@@ -16,7 +17,7 @@ agent 可以在明显不匹配时**提议改模式**（见 `40-gui.md` 的建议
 1. **处在边界上**：一个阶段完成、文档/笔记已落盘、要切换到不相关的子任务。
 2. **下一阶段能靠磁盘 + 摘要跑起来**，不需要原始工具输出、报错串、长 diff。
 3. **会话后面还有大量工作**；快收尾了压了也是白压。
-4. **内置线快到了**：与其让系统在某个步骤中途被动压，不如自己挑一个时刻先压。
+4. **系统线快到了**：与其让系统在某个步骤中途被动压，不如自己挑一个时刻先压。
 5. **这一回合的最后一条回答能自包含**——`compactNow` 只保留最后一个节点，
    最后这条消息是唯一逐字保留的东西；如果它承载了下一步需要的信息，就能压。
 
@@ -42,12 +43,12 @@ agent 可以在明显不匹配时**提议改模式**（见 `40-gui.md` 的建议
 |---|---|---|
 | System prompt（静态） | 判断标准与行为准则 | 约 100 词，只渲染一次，进前缀缓存 |
 | 工具描述 | 机制与硬约束（回合后运行、只留最后一条、要一次摘要调用） | 每次请求随 schema 发送，反正已存在 |
-| 运行期 | `check` 读数、跨水位一次提醒、压缩结果通知 | 每事件一次 |
+| 运行期 | `check` 读数、跨阈值一次提醒、压缩结果通知 | 每事件一次 |
 
 ### System prompt 段落
 
 ```
-You can compact your own history with `compact_context`. Compaction replaces older
+You can compact your own history with `smart_compact`. Compaction replaces older
 history with a structured summary and keeps only the most recent message; anything
 not on disk is at risk.
 
@@ -78,7 +79,7 @@ costs one summarization call.
 
 ```jsonc
 {
-  "name": "compact_context",
+  "name": "smart_compact",
   "parameters": {
     "type": "object",
     "properties": {
@@ -102,20 +103,21 @@ costs one summarization call.
 `check`：
 
 ```
-context 437k/1049k (42%) · watermark 629k · built-in rail 727k · compaction would free ~430k
+context 442k/1.05M (42%) · suggested 60% (629k) · built-in rail 69% (727k) · compaction would free ~430k
 ```
 
 `request`：
 
 ```
-queued for the end of this turn (turn 12). It runs only if pressure is still above the watermark.
+Queued for the end of this turn. It runs only if pressure is still above the suggested line.
+context 442k/1.05M (42%) · suggested 60% (629k) · ...
 Before you finish: write decisions, file paths and the next step to disk.
 ```
 
-低于水位：
+低于阈值：
 
 ```
-not queued: context 118k/1049k (11%) is below the watermark 629k; no compaction needed yet
+Not queued: context 118k/1.05M (11%) · suggested 60% (629k) · ... is below the suggested line; no compaction needed yet.
 ```
 
 不提供"立刻压"：回合内没有这个语义（`compactNow` 需要没有 open turn），工具不应假装有。
@@ -135,11 +137,11 @@ not queued: context 118k/1049k (11%) is below the watermark 629k; no compaction 
 2. **system prompt 的更新策略取决于路由**：`deepseek-flash` 声明 `in-history`，变化追加在尾部、
    前缀缓存保住；其他路由不支持，prompt 一变就重写头部，**整段前缀缓存失效**。
 
-因此：静态策略进 `section()`；数字走 `check`；跨水位与结果各通知一次。
+因此：静态策略进 `section()`；数字走 `check`；跨阈值与结果各通知一次。
 
 ## 已知失败模式
 
-- 每个回合结束都"顺手压一下"，上下文一直在低水位重置；
+- 每个回合结束都"顺手压一下"，上下文一直在低占用重置；
 - 为了让压缩发生而提前结束回合；
 - 压缩后把刚丢的东西全部重读一遍，净负收益；
 - 在用户等待确认时压缩，把待确认的细节压掉。

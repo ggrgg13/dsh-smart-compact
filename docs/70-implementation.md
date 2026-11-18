@@ -27,10 +27,10 @@ Host 半与 Client 半都已实现，32 个测试通过。**尚未安装到 prof
 ## 运行行为
 
 1. system prompt 增加静态段（order 320）：判断准则与"压缩前先落盘"。
-2. 注册 `compact_context` 工具：
+2. 注册 `smart_compact` 工具：
    - `check` 返回 `context 700k/1.05M (67%) · suggested 60% (629k) · built-in rail 69% (727k) · ...`；
    - `request` 在低于阈值、关闭、已有 pending 时明确拒绝，否则登记 pending。
-3. 注册 `/smart-compact` 命令：`status|off|on|default|<percent>`。
+3. 注册 `/smart-compact` 命令（面向人，输出中文）：`status|off|on|default|<百分比>`。
 4. `agent/status === 'idle'` 时消费 pending：
    - 仍低于阈值 → 丢弃并通知；
    - 否则 `ctx.compaction.compactNow(agent, signal)`；
@@ -65,6 +65,10 @@ Host 半与 Client 半都已实现，32 个测试通过。**尚未安装到 prof
   滑杆只在松开时提交（`pointerup/cancel/keyup/blur`），一次拖动只写一次。
 - **UI 文案写在 `client.js` 里**，`locale/*.json` 只保留插件卡片元数据——客户端 bundle
   无法读取包的 JSON 文件，两处维护反而更容易失配。
+- **工具与回执英文、命令与 GUI 中文**：前两者面向模型，术语稳定更重要；后两者面向人。
+- **工具名 `smart_compact`**：`ctx.tools.register` 重名直接抛错，带插件名空间可避免与其它
+  压缩类插件撞名（详见 `40-gui.md` 实现注记）。
+- **面板三态用单选**，不用两个独立勾选框：跟随默认 / 自定义（展开滑杆）/ 关闭。
 
 ## 已偏离计划的点
 

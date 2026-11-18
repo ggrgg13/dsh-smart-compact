@@ -31,7 +31,7 @@
 
 ## M1 · 最小可用（Host only）
 
-- `compact_context` 工具（`check` / `request`）。
+- `smart_compact` 工具（`check` / `request`）。
 - pending 记录 + `agent/status` 执行器 + 失败/竞争处理。
 - 静态 system prompt 段落。
 - 单测：阈值判定、pending 生命周期、busy 重试、低于阈值拒绝。

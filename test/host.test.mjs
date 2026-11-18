@@ -111,8 +111,8 @@ async function callRoute(routes, path, { method = 'GET', body, url } = {}) {
 
 test('registers the policy section, the tool and the command', () => {
   const { registered, dispose } = createContext()
-  assert.match(registered.section.text, /compact_context/)
-  assert.equal(registered.tool.name, 'compact_context')
+  assert.match(registered.section.text, /smart_compact/)
+  assert.equal(registered.tool.name, 'smart_compact')
   assert.equal(registered.command.name, 'smart-compact')
   dispose()
 })
@@ -130,7 +130,7 @@ test('request below the suggested line is refused', async () => {
   const { registered, agent, dispose } = createContext({ pressure: 100_000 })
   const result = await registered.tool.execute({ action: 'request' }, { agent })
   assert.match(result.text, /Not queued/)
-  assert.match(result.text, /below the suggested watermark/)
+  assert.match(result.text, /below the suggested line/)
   dispose()
 })
 
@@ -154,7 +154,7 @@ test('request above the line runs at idle, not during the call', async () => {
 test('off refuses requests but keeps reporting the budget', async () => {
   const { registered, agent, compactionCalls, dispose } = createContext()
   const status = registered.command.handler({ agent, rawInput: 'off' })
-  assert.match(status.text, /^off/)
+  assert.match(status.text, /^阈值 关闭/)
   const result = await registered.tool.execute({ action: 'request' }, { agent })
   assert.match(result.text, /turned off for this session/)
   await registered.listeners['agent/status']({ agent, status: 'idle' })
@@ -165,7 +165,7 @@ test('off refuses requests but keeps reporting the budget', async () => {
 test('a session percent is clamped below the rail and applies to the tool', async () => {
   const { registered, agent, dispose } = createContext({ pressure: 700_000 })
   const status = registered.command.handler({ agent, rawInput: '90' })
-  assert.match(status.text, /requested 90%, capped at 67%/)
+  assert.match(status.text, /请求 90%，按上限取 67%/)
   const check = await registered.tool.execute({ action: 'check' }, { agent })
   assert.match(check.text, /suggested 67% \(703k\)/)
   dispose()
@@ -175,8 +175,8 @@ test('default and reset return the session to the plugin default', async () => {
   const { registered, agent, dispose } = createContext()
   registered.command.handler({ agent, rawInput: '55' })
   const back = registered.command.handler({ agent, rawInput: 'default' })
-  assert.match(back.text, /^default · /)
-  assert.match(back.text, /suggested 60%/)
+  assert.match(back.text, /^阈值 跟随默认 60%/)
+  assert.match(back.text, /建议线 60%/)
   dispose()
 })
 
@@ -186,7 +186,8 @@ test('crossing the suggested line notifies the agent once per crossing', async (
   await registered.listeners['agent/pre-step']({ agent }, next)
   await registered.listeners['agent/pre-step']({ agent }, next)
   assert.equal(notices.length, 1)
-  assert.match(notices[0], /suggested compaction watermark/)
+  assert.match(notices[0], /suggested compaction line/)
+  assert.match(notices[0], /smart_compact\(action: "request"\)/)
   dispose()
 })
 

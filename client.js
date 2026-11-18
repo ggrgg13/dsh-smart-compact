@@ -4,15 +4,15 @@
  * Two seats:
  *
  * - `conversation.input.model.options` — one row in the model/reasoning menu
- *   showing the current context use against this session's suggested threshold;
- *   expanding it reveals a slider that commits on release.
+ *   showing used context against this session's suggested line; expanding it
+ *   reveals the threshold controls.
  * - `plugins.bundle.config` — the plugin page's default-threshold control.
  *
  * No build step: DSH loads this file as a Cordis client bundle through the
- * `dsh.client` declaration in package.json, and packs it with the package.
+ * `dsh.client` declaration in package.json.
  *
- * Writes go through the Host's `/smart-compact/*` routes. Reads for the live
- * usage number ride the `contextPressure` projection supplied by the slot props
+ * Writes go through the Host's `/smart-compact/*` routes. The live usage number
+ * rides the `contextPressure` projection supplied by the slot props
  * (`useProjection`), so the row updates without polling.
  */
 
@@ -24,7 +24,7 @@ window.__ModuleLoader__.load({
     Object.defineProperty(exports, Symbol.toStringTag, { value: 'Module' })
 
     const React = require('react')
-    const { useCallback, useEffect, useMemo, useRef, useState } = React
+    const { useCallback, useEffect, useRef, useState } = React
     const h = React.createElement
 
     const NS = 'smart-compact'
@@ -34,62 +34,62 @@ window.__ModuleLoader__.load({
 
     const en = {
       'row.label': 'Context compaction',
-      'row.menuLabel': 'Compaction threshold',
-      'row.unavailable': 'Context window not reported yet',
       'row.off': 'off',
-      'row.pending': 'queued',
+      'row.unavailable': '—',
       'panel.open': 'Change the compaction threshold',
       'panel.used': 'Used',
-      'panel.suggested': 'Agent compacts at',
-      'panel.rail': 'Harness auto-compacts at',
-      'panel.followDefault': 'Follow the plugin default',
-      'panel.defaultValue': 'default {percent}%',
-      'panel.off': 'Turn compaction off for this session',
-      'panel.offHint': 'The Harness still compacts at its own line.',
+      'panel.suggested': 'Suggested line',
+      'panel.system': 'System line',
+      'panel.follow': 'Follow the default ({percent}%)',
+      'panel.custom': 'Custom',
+      'panel.off': 'Off',
+      'panel.offHint': 'The system line still applies.',
+      'panel.cap': 'up to {percent}%',
       'panel.saving': 'Saving…',
       'panel.saveFailed': 'Could not save: {message}',
-      'panel.windowTooSmall': 'This model leaves no room below the Harness line, so no suggestion is made.',
+      'panel.windowTooSmall': 'This model leaves no room below the system line, so no suggestion is made.',
       'panel.unknownWindow': 'The context window is known after the first request.',
-      'panel.capped': 'The Harness line caps this at {percent}%.',
-      'panel.percentShort': '{percent}%',
-      'panel.tokensOf': 'of {tokens}',
+      'panel.capped': 'The system line caps this at {percent}%.',
+      'panel.unavailable': 'Settings are unavailable right now. Reload the page to retry.',
+      'panel.retry': 'Retry',
       'settings.title': 'Default compaction threshold',
-      'settings.description': 'New sessions start here. A session can override it from the model menu.',
+      'settings.description': 'New sessions start here; a session can override it from the model menu.',
+      'settings.clampHint': 'Above the system line, every session truncates it to its own cap.',
       'settings.loading': 'Loading…',
-      'settings.unavailable': 'The plugin host routes are unavailable; is the plugin enabled in a Web session?',
+      'settings.unavailable': 'Settings are unavailable right now. Reload the page to retry.',
+      'settings.retry': 'Retry',
       'settings.saveFailed': 'Could not save: {message}',
       'settings.saved': 'Saved',
-      'settings.offNote': 'A per-session override still applies; the Harness line is never moved.',
     }
 
     const zh = {
       'row.label': '上下文压缩',
-      'row.menuLabel': '压缩阈值',
-      'row.unavailable': '还没有拿到窗口大小',
       'row.off': '已关闭',
-      'row.pending': '已排队',
+      'row.unavailable': '—',
       'panel.open': '调整压缩阈值',
       'panel.used': '已用',
-      'panel.suggested': 'agent 在此压缩',
-      'panel.rail': 'Harness 自动压缩线',
-      'panel.followDefault': '跟随插件默认值',
-      'panel.defaultValue': '默认 {percent}%',
-      'panel.off': '本会话关闭压缩',
-      'panel.offHint': 'Harness 自己的自动压缩线仍然有效。',
+      'panel.suggested': '建议线',
+      'panel.system': '系统自动压缩线',
+      'panel.follow': '跟随默认（{percent}%）',
+      'panel.custom': '自定义',
+      'panel.off': '关闭',
+      'panel.offHint': '系统自动压缩线仍然有效。',
+      'panel.cap': '最高 {percent}%',
       'panel.saving': '保存中…',
       'panel.saveFailed': '保存失败：{message}',
-      'panel.windowTooSmall': '这个模型在 Harness 线下方没有空间，因此不给建议。',
+      'panel.windowTooSmall': '这个模型的窗口在系统线下方没有空间，因此不给建议。',
       'panel.unknownWindow': '第一次请求之后才知道窗口大小。',
-      'panel.capped': '受 Harness 压缩线限制，最高 {percent}%。',
-      'panel.percentShort': '{percent}%',
-      'panel.tokensOf': '/ {tokens}',
+      'panel.capped': '受系统线限制，最高 {percent}%。',
+      'panel.unavailable': '暂时读不到设置，刷新页面重试。',
+      'panel.retry': '重试',
       'settings.title': '默认压缩阈值',
-      'settings.description': '新会话从这里开始；单个会话可以在模型菜单里覆盖它。',
+      'settings.description': '新会话从这里开始；单个会话可以在模型菜单里覆盖。',
+      'settings.clampHint': '超过系统线时，每个会话会按自己的上限截断。',
       'settings.loading': '加载中…',
-      'settings.unavailable': '插件宿主路由不可用：插件是否在 Web 会话里启用？',
+      'settings.unavailable': '暂时读不到设置，刷新页面重试。',
+      'settings.retry': '重试',
       'settings.saveFailed': '保存失败：{message}',
       'settings.saved': '已保存',
-      'settings.offNote': '单个会话的覆盖仍然生效；Harness 的压缩线不会被移动。',
     }
 
     /** Interpolate `{name}` placeholders without a dependency. */
@@ -118,12 +118,11 @@ window.__ModuleLoader__.load({
       return await response.json()
     }
 
-    const SEC = {
-      label: { color: 'var(--dsw-alias-label-secondary, #666)', fontSize: 12 },
-      caption: { color: 'var(--dsw-alias-label-caption, #8a8a8a)', fontSize: 11, lineHeight: 1.5 },
-      dimmed: { color: 'var(--dsw-alias-label-dimmed, #9a9a9a)', fontSize: 11 },
-      number: { color: 'var(--dsw-alias-label-primary, #1f1f1f)', fontVariantNumeric: 'tabular-nums' },
-    }
+    const CAPTION = { color: 'var(--dsw-alias-label-caption, #8a8a8a)', fontSize: 11, lineHeight: 1.5 }
+    const DIMMED = { color: 'var(--dsw-alias-label-dimmed, #9a9a9a)', fontSize: 11 }
+    const STRONG = { color: 'var(--dsw-alias-label-primary, #1f1f1f)', fontSize: 12, fontVariantNumeric: 'tabular-nums' }
+    const ERROR = { color: 'var(--dsw-alias-state-error-primary, #c0392b)' }
+    const ACCENT = 'var(--dsw-alias-state-business-primary, #4d6bfe)'
 
     /** Percentage of the window one token count represents. */
     function pct(tokens, windowSize) {
@@ -139,23 +138,15 @@ window.__ModuleLoader__.load({
       return String(Math.round(value))
     }
 
-    /** A three-marker bar: used, suggested, and the Harness' own line. */
-    function BudgetBar({ usedPercent, suggestedPercent, railPercent, t }) {
-      const marker = (left, color, label) => h('span', {
-        title: label,
-        style: {
-          position: 'absolute',
-          top: -2,
-          bottom: -2,
-          left: `${left}%`,
-          width: 2,
-          borderRadius: 1,
-          background: color,
-        },
+    /** A three-marker bar: used, suggested line, and the system's own line. */
+    function BudgetBar({ usedPercent, suggestedPercent, systemPercent, label }) {
+      const marker = (left, color, text) => h('span', {
+        title: text,
+        style: { position: 'absolute', top: -2, bottom: -2, left: `${left}%`, width: 2, borderRadius: 1, background: color },
       })
       return h('div', {
         role: 'img',
-        'aria-label': fill(t('panel.used'), {}) + ' ' + (usedPercent === null ? '?' : Math.round(usedPercent) + '%'),
+        'aria-label': label,
         style: {
           position: 'relative',
           height: 6,
@@ -173,12 +164,12 @@ window.__ModuleLoader__.load({
             bottom: 0,
             width: `${usedPercent}%`,
             borderRadius: 3,
-            background: 'var(--dsw-alias-state-business-primary, #4d6bfe)',
+            background: ACCENT,
             opacity: 0.75,
           },
         }),
-        suggestedPercent === null ? null : marker(suggestedPercent, 'var(--dsw-alias-label-primary, #1f1f1f)', t('panel.suggested')),
-        railPercent === null ? null : marker(railPercent, 'var(--dsw-alias-state-warn-label, #b26a00)', t('panel.rail')),
+        suggestedPercent === null ? null : marker(suggestedPercent, 'var(--dsw-alias-label-primary, #1f1f1f)', `${Math.round(suggestedPercent)}%`),
+        systemPercent === null ? null : marker(systemPercent, 'var(--dsw-alias-state-warn-label, #b26a00)', `${Math.round(systemPercent)}%`),
       ])
     }
 
@@ -186,9 +177,7 @@ window.__ModuleLoader__.load({
     function PercentSlider({ value, min, max, disabled, onCommit, label }) {
       const [draft, setDraft] = useState(value)
       useEffect(() => { setDraft(value) }, [value])
-      const commit = () => {
-        if (draft !== value) onCommit(draft)
-      }
+      const commit = () => { if (draft !== value) onCommit(draft) }
       return h('input', {
         type: 'range',
         min,
@@ -202,16 +191,27 @@ window.__ModuleLoader__.load({
         onPointerCancel: commit,
         onKeyUp: commit,
         onBlur: commit,
-        style: { width: '100%', accentColor: 'var(--dsw-alias-state-business-primary, #4d6bfe)', cursor: disabled ? 'default' : 'pointer' },
+        style: { width: '100%', accentColor: ACCENT, cursor: disabled ? 'default' : 'pointer' },
       })
     }
 
-    /** One threshold-reading line, shared by the row and the panel. */
-    function summaryText(session, t) {
-      if (session === null || session === undefined) return t('row.unavailable')
-      if (session.status === 'off') return t('row.off')
-      if (session.percent === null) return t('row.unavailable')
-      return `${session.percent}%`
+    /** Small text button used by the retry paths. */
+    function LinkButton({ onClick, children }) {
+      return h('button', {
+        type: 'button',
+        onClick,
+        style: {
+          alignSelf: 'flex-start',
+          padding: 0,
+          border: 0,
+          background: 'transparent',
+          color: ACCENT,
+          font: 'inherit',
+          fontSize: 11,
+          cursor: 'pointer',
+          textDecoration: 'underline',
+        },
+      }, children)
     }
 
     /**
@@ -233,11 +233,10 @@ window.__ModuleLoader__.load({
         const hint = windowRef.current === undefined ? '' : `&window=${Math.round(windowRef.current)}`
         return getJson(`${STATE_PATH}?sessionId=${encodeURIComponent(sessionId)}${hint}`)
           .then((next) => { setState(next) })
-          .catch(() => { setFailure(t('settings.unavailable')) })
+          .catch(() => { setFailure(t('panel.unavailable')) })
       }, [sessionId, t])
 
       useEffect(() => { windowRef.current = pressure ? pressure.contextWindow : undefined })
-
       useEffect(() => { void load() }, [load])
 
       const session = state === null ? null : state.session
@@ -247,7 +246,7 @@ window.__ModuleLoader__.load({
       const suggestedPercent = session && session.percent !== null ? session.percent : null
 
       // The projection may report the window after the first fetch; ask again
-      // once per window value so the rail and the cap stop being unknown.
+      // once per window value so the system line and the cap stop being unknown.
       useEffect(() => {
         if (windowSize === undefined || session == null || session.percent !== null) return
         if (retried.current === windowSize) return
@@ -267,18 +266,44 @@ window.__ModuleLoader__.load({
       const defaultPercent = state === null ? 60 : state.defaultPercent
       const minPercent = state === null ? 30 : state.minPercent
       const maxPercent = session && session.maxPercent !== null ? session.maxPercent : 99
-      const followsDefault = session !== null && session.threshold.kind === 'default'
-      const off = session !== null && session.threshold.kind === 'off'
+      const kind = session === null ? 'default' : session.threshold.kind
       const unknownWindow = session === null || session.status === 'unknown-window'
       const tooSmall = session !== null && session.status === 'window-too-small'
-
       const rowDisabled = locked || session === null || tooSmall
 
+      const choose = (next) => {
+        if (next === 'default') return void apply({ kind: 'default' })
+        if (next === 'off') return void apply({ kind: 'off' })
+        return void apply({ kind: 'percent', percent: suggestedPercent ?? defaultPercent })
+      }
+
+      const summary = kind === 'off'
+        ? t('row.off')
+        : suggestedPercent === null
+          ? t('row.unavailable')
+          : `${usedPercent === null ? '—' : Math.round(usedPercent)}% / ${suggestedPercent}%`
+
+      const radio = (value, label, hint) => h('label', {
+        key: `radio-${value}`,
+        style: { display: 'flex', alignItems: 'flex-start', gap: 6, ...CAPTION, cursor: 'pointer' },
+      }, [
+        h('input', {
+          key: 'input',
+          type: 'radio',
+          name: `smart-compact-${sessionId}`,
+          checked: kind === value,
+          disabled: saving,
+          onChange: () => { choose(value) },
+          style: { marginTop: 2, accentColor: ACCENT },
+        }),
+        h('span', { key: 'text', style: { display: 'flex', flexDirection: 'column', gap: 1 } }, [
+          h('span', { key: 'label', style: kind === value ? STRONG : undefined }, label),
+          hint === undefined ? null : h('span', { key: 'hint', style: DIMMED }, hint),
+        ]),
+      ])
+
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, padding: '2px 2px 6px' } }, [
-        h('div', {
-          key: 'row',
-          style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 },
-        }, [
+        h('div', { key: 'row', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } }, [
           h('button', {
             key: 'toggle',
             type: 'button',
@@ -295,73 +320,64 @@ window.__ModuleLoader__.load({
               padding: '4px 0',
               border: 0,
               background: 'transparent',
-              color: rowDisabled ? SEC.dimmed.color : SEC.number.color,
+              color: rowDisabled ? DIMMED.color : STRONG.color,
               cursor: rowDisabled ? 'default' : 'pointer',
               textAlign: 'left',
               font: 'inherit',
             },
           }, [
-            h('span', { key: 'label', style: SEC.number }, t('row.label')),
-            h('span', { key: 'value', style: { ...SEC.caption, marginLeft: 'auto' } },
-              off ? t('row.off') : summaryText(session, t)),
-            h('span', { key: 'chevron', style: { ...SEC.caption, fontSize: 10, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms' } }, '›'),
+            h('span', { key: 'label', style: STRONG }, t('row.label')),
+            h('span', { key: 'value', style: { ...CAPTION, marginLeft: 'auto' } }, summary),
+            h('span', {
+              key: 'chevron',
+              style: { ...CAPTION, fontSize: 10, transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms' },
+            }, '›'),
           ]),
         ]),
-        failure === null ? null : h('div', { key: 'failure', style: { ...SEC.caption, color: 'var(--dsw-alias-state-error-primary, #c0392b)' } }, failure),
+        failure === null ? null : h('div', { key: 'failure', style: { ...CAPTION, ...ERROR } }, failure),
+        failure === null ? null : h(LinkButton, { key: 'retry', onClick: () => { void load() } }, t('panel.retry')),
         open ? h('div', { key: 'panel', style: { display: 'flex', flexDirection: 'column', gap: 8, padding: '2px 2px 4px' } }, [
           h(BudgetBar, {
             key: 'bar',
             usedPercent,
             suggestedPercent,
-            railPercent: session && session.railPercent !== null ? session.railPercent : null,
-            t,
+            systemPercent: session && session.railPercent !== null ? session.railPercent : null,
+            label: t('panel.suggested'),
           }),
           h('div', { key: 'reading', style: { display: 'flex', justifyContent: 'space-between', gap: 8 } }, [
-            h('span', { key: 'used', style: SEC.caption },
-              `${t('panel.used')} ${tokens(usedTokens)} ${fill(t('panel.tokensOf'), { tokens: tokens(windowSize) })}`),
-            h('span', { key: 'suggested', style: SEC.caption },
+            h('span', { key: 'used', style: CAPTION },
+              `${t('panel.used')} ${tokens(usedTokens)} / ${tokens(windowSize)}`),
+            h('span', { key: 'suggested', style: CAPTION },
               suggestedPercent === null ? '' : `${t('panel.suggested')} ${suggestedPercent}%`),
           ]),
           tooSmall
-            ? h('div', { key: 'too-small', style: SEC.caption }, t('panel.windowTooSmall'))
+            ? h('div', { key: 'too-small', style: CAPTION }, t('panel.windowTooSmall'))
             : h(React.Fragment, { key: 'controls' }, [
-              h(PercentSlider, {
-                key: 'slider',
-                value: suggestedPercent === null ? defaultPercent : suggestedPercent,
-                min: minPercent,
-                max: maxPercent,
-                disabled: saving || unknownWindow || off,
-                label: t('panel.suggested'),
-                onCommit: (percent) => { void apply({ kind: 'percent', percent }) },
-              }),
-              h('label', { key: 'follow', style: { display: 'flex', alignItems: 'center', gap: 6, ...SEC.caption, cursor: 'pointer' } }, [
-                h('input', {
-                  key: 'box',
-                  type: 'checkbox',
-                  checked: followsDefault,
-                  disabled: saving,
-                  onChange: () => { void apply({ kind: 'default' }) },
-                }),
-                h('span', { key: 'text' }, `${t('panel.followDefault')} · ${fill(t('panel.defaultValue'), { percent: defaultPercent })}`),
+              radio('default', fill(t('panel.follow'), { percent: defaultPercent })),
+              h('div', { key: 'custom', style: { display: 'flex', flexDirection: 'column', gap: 4 } }, [
+                radio('custom', t('panel.custom'), kind === 'percent' && maxPercent < 99 ? fill(t('panel.cap'), { percent: maxPercent }) : undefined),
+                kind === 'percent'
+                  ? h(PercentSlider, {
+                    key: 'slider',
+                    value: suggestedPercent ?? defaultPercent,
+                    min: minPercent,
+                    max: maxPercent,
+                    disabled: saving || unknownWindow,
+                    label: t('panel.suggested'),
+                    onCommit: (percent) => { void apply({ kind: 'percent', percent }) },
+                  })
+                  : null,
               ]),
-              h('label', { key: 'off', style: { display: 'flex', alignItems: 'center', gap: 6, ...SEC.caption, cursor: 'pointer' } }, [
-                h('input', {
-                  key: 'box',
-                  type: 'checkbox',
-                  checked: off,
-                  disabled: saving,
-                  onChange: (event) => { void apply(event.target.checked ? { kind: 'off' } : { kind: 'default' }) },
-                }),
-                h('span', { key: 'text' }, t('panel.off')),
-              ]),
+              radio('off', t('panel.off'), t('panel.offHint')),
             ]),
-          tooSmall || session === null ? null : h('div', { key: 'rail', style: SEC.dimmed },
-            `${t('panel.rail')} ${Math.round(session.railPercent)}%`),
-          session !== null && session.clamped
-            ? h('div', { key: 'capped', style: SEC.dimmed }, fill(t('panel.capped'), { percent: session.percent }))
+          session !== null && session.railPercent !== null
+            ? h('div', { key: 'system', style: DIMMED }, `${t('panel.system')} ${Math.round(session.railPercent)}%`)
             : null,
-          unknownWindow ? h('div', { key: 'unknown', style: SEC.caption }, t('panel.unknownWindow')) : null,
-          saving ? h('div', { key: 'saving', style: SEC.caption }, t('panel.saving')) : null,
+          session !== null && session.clamped
+            ? h('div', { key: 'capped', style: DIMMED }, fill(t('panel.capped'), { percent: session.percent }))
+            : null,
+          unknownWindow ? h('div', { key: 'unknown', style: CAPTION }, t('panel.unknownWindow')) : null,
+          saving ? h('div', { key: 'saving', style: CAPTION }, t('panel.saving')) : null,
         ]) : null,
       ])
     }
@@ -400,18 +416,19 @@ window.__ModuleLoader__.load({
           .catch((error) => { setFailure(fill(t('settings.saveFailed'), { message: error.message })) })
       }
 
-      if (loading && state === null) return h('div', { style: SEC.caption }, t('settings.loading'))
+      if (loading && state === null) return h('div', { style: CAPTION }, t('settings.loading'))
       if (state === null) {
         return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } }, [
-          h('div', { key: 'title', style: SEC.number }, t('settings.title')),
-          h('div', { key: 'failure', style: { ...SEC.caption, color: 'var(--dsw-alias-state-error-primary, #c0392b)' } }, failure ?? ''),
+          h('div', { key: 'title', style: STRONG }, t('settings.title')),
+          h('div', { key: 'failure', style: { ...CAPTION, ...ERROR } }, failure ?? ''),
+          h(LinkButton, { key: 'retry', onClick: () => { void load() } }, t('settings.retry')),
         ])
       }
 
       return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, maxWidth: 460 } }, [
-        h('div', { key: 'title', style: SEC.number }, t('settings.title')),
-        h('div', { key: 'description', style: SEC.caption }, t('settings.description')),
-        h('div', { key: 'value', style: { ...SEC.number, fontSize: 20, fontVariantNumeric: 'tabular-nums' } }, `${state.defaultPercent}%`),
+        h('div', { key: 'title', style: STRONG }, t('settings.title')),
+        h('div', { key: 'description', style: CAPTION }, t('settings.description')),
+        h('div', { key: 'value', style: { ...STRONG, fontSize: 20 } }, `${state.defaultPercent}%`),
         h(PercentSlider, {
           key: 'slider',
           value: state.defaultPercent,
@@ -421,9 +438,9 @@ window.__ModuleLoader__.load({
           label: t('settings.title'),
           onCommit: commit,
         }),
-        h('div', { key: 'note', style: SEC.dimmed }, t('settings.offNote')),
-        saved ? h('div', { key: 'saved', style: SEC.caption }, t('settings.saved')) : null,
-        failure === null ? null : h('div', { key: 'failure', style: { ...SEC.caption, color: 'var(--dsw-alias-state-error-primary, #c0392b)' } }, failure),
+        h('div', { key: 'clamp', style: DIMMED }, t('settings.clampHint')),
+        saved ? h('div', { key: 'saved', style: CAPTION }, t('settings.saved')) : null,
+        failure === null ? null : h('div', { key: 'failure', style: { ...CAPTION, ...ERROR } }, failure),
       ])
     }
 

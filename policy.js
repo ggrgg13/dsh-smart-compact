@@ -170,6 +170,39 @@ export function describeBudget({ pressure, budget, reclaimable }) {
   return parts.join(' · ')
 }
 
+/**
+ * Chinese counterpart of {@link describeBudget}, for the human-facing command.
+ * The tool and the agent notices stay in English; command output is for people.
+ *
+ * @param {object} input
+ * @param {number} [input.pressure] tokens in the latest recorded request
+ * @param {ReturnType<typeof computeBudget>} input.budget
+ * @param {number} [input.reclaimable] tokens compaction could free
+ * @returns {string} reading text
+ */
+export function describeBudgetZh({ pressure, budget, reclaimable }) {
+  const used = Number.isFinite(pressure) ? pressure : 0
+  const parts = []
+  if (budget.window === null) {
+    parts.push(`已用 ${formatTokens(used)}`)
+  } else {
+    parts.push(`已用 ${formatTokens(used)}/${formatTokens(budget.window)}（${Math.round((used / budget.window) * 100)}%）`)
+  }
+  if (budget.status === 'off') parts.push('本会话已关闭压缩')
+  if (budget.status === 'window-too-small') parts.push('窗口在系统线下方没有空间')
+  if (budget.percent !== null) {
+    parts.push(`建议线 ${budget.percent}%（${formatTokens(budget.thresholdTokens)}）`)
+  }
+  if (budget.rail !== null) {
+    parts.push(`系统自动压缩线 ${Math.round(budget.railPercent)}%（${formatTokens(budget.rail)}）`)
+  }
+  if (budget.clamped && budget.requestedPercent !== null) {
+    parts.push(`请求 ${budget.requestedPercent}%，按上限取 ${budget.percent}%`)
+  }
+  if (reclaimable !== undefined) parts.push(`压缩可释放约 ${formatTokens(reclaimable)}`)
+  return parts.join(' · ')
+}
+
 /** Threshold states a stored record may hold. */
 export const THRESHOLD_KINDS = ['default', 'percent', 'off']
 

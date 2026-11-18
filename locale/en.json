@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "Smart compact",
-    "description": "Lets the agent request context compaction at a turn boundary, with a policy derived from the Harness' own compaction settings.",
+    "description": "Lets the agent compact its context at a turn boundary, with a threshold that always stays below the system compaction line.",
     "detail": "docs/DETAIL.md"
   }
 }
