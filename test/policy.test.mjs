@@ -87,6 +87,7 @@ test('version 1 modes migrate to percent thresholds', () => {
   })
   assert.equal(state.version, 2)
   assert.equal(state.defaultPercent, DEFAULT_PERCENT)
+  assert.equal(state.allowForce, false)
   assert.deepEqual(state.sessions.a.threshold, { kind: 'off' })
   assert.deepEqual(state.sessions.b.threshold, { kind: 'percent', percent: 99 })
   assert.deepEqual(state.sessions.c.threshold, { kind: 'percent', percent: 40 })
@@ -103,6 +104,12 @@ test('a version 2 state round-trips and clamps the global default', () => {
   })
   assert.equal(state.defaultPercent, 99)
   assert.deepEqual(state.sessions.a.threshold, { kind: 'percent', percent: 55 })
+})
+
+test('the bypass is off unless the state says otherwise', () => {
+  assert.equal(migrateState(undefined).allowForce, false)
+  assert.equal(migrateState({ allowForce: 'yes' }).allowForce, false)
+  assert.equal(migrateState({ allowForce: true }).allowForce, true)
 })
 
 test('token formatting is compact and stable', () => {

@@ -122,6 +122,41 @@ Not queued: context 118k/1.05M (11%) · suggested 60% (629k) · ... is below the
 
 不提供"立刻压"：回合内没有这个语义（`compactNow` 需要没有 open turn），工具不应假装有。
 
+## 绕过（默认关闭，0.1.6）
+
+阈值把"值不值得花钱"固定在 30%–rail−2%，所以上下文很小的会话永远压不了，
+无法低成本验证压缩链路。为此加了一条**显式绕过**，但平时不存在：
+
+| 层 | 关闭时 | 打开时 |
+|---|---|---|
+| 插件页开关 | `allowForce: false` | 勾选「允许绕过阈值（测试用）」 |
+| 工具 | 不注册 | 多一个 `smart_compact_force` |
+| prompt | 不渲染 | 多一段约 60 词的说明（order 321） |
+| 命令 | `/smart-compact force` 报错 | `/smart-compact force [原因]` 排队 |
+
+```jsonc
+{
+  "name": "smart_compact_force",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "reason": { "type": "string", "description": "One short line for the user, such as 'testing the bypass'." }
+    }
+  }
+}
+```
+
+语义边界：
+
+- 跳过**阈值、窗口未知、压力**三项判断——`pending.force = true` 让执行层直接放行；
+- **不跳过 `off`**：关闭是用户显式意愿，force 也不覆盖（命令与工具都会明确报错）；
+- 仍然只在回合结束后执行一次（`running` 去重照旧），通知标为
+  `Compacted older history (forced bypass); ~N tokens freed`，日志里可区分；
+- 关闭开关时工具与 prompt 段立即 dispose，下一次请求就看不到，不占任何 token。
+
+为什么是全局开关而不是每会话开关：它是测试工具，不是产品功能；放全局才不会
+诱导 agent 在正常会话里试探它。开关状态存在 `state.json` 的 `allowForce`，重启后保留。
+
 ## 为什么不把这段放进 skill
 
 - 静态 prompt 段约 130 tokens，只渲染一次并进前缀缓存，几乎免费；

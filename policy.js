@@ -215,11 +215,13 @@ export const THRESHOLD_KINDS = ['default', 'percent', 'off']
  * the default.
  *
  * @param {unknown} raw parsed state file
- * @returns {{ version: 2, defaultPercent: number, sessions: Record<string, object> }}
+ * @returns {{ version: 2, defaultPercent: number, allowForce: boolean, sessions: Record<string, object> }}
  */
 export function migrateState(raw) {
-  const state = { version: 2, defaultPercent: DEFAULT_PERCENT, sessions: {} }
+  const state = { version: 2, defaultPercent: DEFAULT_PERCENT, allowForce: false, sessions: {} }
   if (!raw || typeof raw !== 'object') return state
+  // The bypass is deliberately opt-in: a missing or junk value keeps it off.
+  state.allowForce = raw.allowForce === true
   if (Number.isFinite(raw.defaultPercent)) {
     state.defaultPercent = Math.max(MIN_PERCENT, Math.min(99, Math.round(raw.defaultPercent)))
   }

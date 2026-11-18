@@ -25,7 +25,7 @@ Host 半边包含四个关注点，互相之间只通过一个策略服务（`Sm
 ```
 agent 调 request_compaction
    │
-   ├─ 校验：没有正在进行的 compaction / 压力 ≥ 地板 / 本会话未禁用
+   ├─ 校验：本会话未禁用 / 没有正在进行的 compaction / 压力 ≥ 地板
    ├─ 写 per-session pending 记录（存储 + 内存）
    └─ 返回 “queued for the end of this turn; write handoff notes first”
    │
@@ -35,6 +35,8 @@ turn/end 落盘
    ▼
 agent/status === 'idle'
    │
+   ├─ 本会话 off ?            → 丢弃 pending（off 永远优先，绕过也不例外）
+   ├─ pending.force ?         → 跳过下面的阈值/窗口复核，直接压缩
    ├─ 重新度量 pressure
    ├─ pressure < watermark ?  → 丢弃 pending，返回/记录 skipped
    └─ pressure ≥ watermark    → ctx.compaction.compactNow(agent, signal)
@@ -46,6 +48,9 @@ agent/status === 'idle'
    ▼
 下一个回合的第一步：注入一次 notice（成功/跳过/失败 + 读数）
 ```
+
+`pending.force` 只能由插件页开关打开后的 `smart_compact_force` 工具或
+`/smart-compact force` 命令写入（见 ADR-12）；开关关闭时这两个入口都不存在。
 
 ### 为什么不在回合内
 

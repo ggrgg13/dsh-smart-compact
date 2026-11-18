@@ -36,6 +36,14 @@ If the window is filling and real work remains, compact before the system does i
 
 const TOOL_DESCRIPTION = 'Read the context budget, or request compaction of older history. A request runs after this turn ends, never mid-turn; it keeps only the most recent message and costs one summarization call.'
 
+/**
+ * Bypass policy sentence. Registered only while the plugin setting enables the
+ * bypass, so an ordinary session never pays for it in the prompt.
+ */
+const FORCE_SECTION = `The compaction bypass is enabled in this plugin's settings: \`smart_compact_force\` queues a compaction that ignores the suggested threshold, and the user can type \`/smart-compact force\`. Both run at the end of the turn like a normal request. Use the bypass only when the user explicitly asks to test compaction or when the budget reading is clearly wrong; a session that is turned off still refuses.`
+
+const FORCE_TOOL_DESCRIPTION = 'Queue a compaction that skips the suggested threshold. Use only when the user explicitly asks to test compaction or the budget reading is clearly wrong: it runs regardless of pressure, and only while the plugin setting allows it. A session that is turned off still refuses.'
+
 /** Same bound the Harness applies to a `notice` source summary (`boundContextSummary`). */
 const NOTICE_SUMMARY_MAX_CHARS = 120
 
@@ -65,6 +73,8 @@ export function apply(ctx) {
   const running = new Set()
   const controllers = new Set()
   let saveTimer
+  /** Prompt section plus tool of the bypass; empty while the setting is off. */
+  let forceDisposers = []
 
   function record(id) {
     return state.sessions[id]
@@ -257,23 +267,29 @@ export function apply(ctx) {
     if (running.has(agent.id)) return
     const rec = record(agent.id)
     if (!rec?.pending) return
+    const forced = rec.pending.force === true
     const current = evaluate(agent.session, thresholdOf(rec), agent)
     if (current.budget.status === 'off') {
       rec.pending = null
       save()
       return
     }
-    if (current.budget.thresholdTokens === null) {
-      rec.pending = null
-      save()
-      await notify(agent, `Compaction skipped: ${reading(current)}. Nothing was changed.`)
-      return
-    }
-    if (current.pressure < current.budget.thresholdTokens) {
-      rec.pending = null
-      save()
-      await notify(agent, `Compaction skipped: ${reading(current)}. Nothing was changed.`)
-      return
+    // The bypass waives the cost gate — no threshold, no window, no pressure —
+    // but it is the only thing waived: `off` above still wins, and the running
+    // guard still keeps one run per request.
+    if (!forced) {
+      if (current.budget.thresholdTokens === null) {
+        rec.pending = null
+        save()
+        await notify(agent, `Compaction skipped: ${reading(current)}. Nothing was changed.`)
+        return
+      }
+      if (current.pressure < current.budget.thresholdTokens) {
+        rec.pending = null
+        save()
+        await notify(agent, `Compaction skipped: ${reading(current)}. Nothing was changed.`)
+        return
+      }
     }
     running.add(agent.id)
     const controller = new AbortController()
@@ -301,9 +317,10 @@ export function apply(ctx) {
         const after = measure()
         const freed = Number.isFinite(before) && Number.isFinite(after) ? Math.max(0, before - after) : null
         rec.last = { at: Date.now(), status: 'ok', freedTokens: freed ?? 0 }
+        const verb = forced ? 'Compacted older history (forced bypass)' : 'Compacted older history'
         await notify(agent, freed === null
-          ? 'Compacted older history. Recent history and files on disk are unchanged.'
-          : `Compacted older history; ~${formatTokens(freed)} tokens freed. Recent history and files on disk are unchanged.`)
+          ? `${verb}. Recent history and files on disk are unchanged.`
+          : `${verb}; ~${formatTokens(freed)} tokens freed. Recent history and files on disk are unchanged.`)
       }
       save()
     } catch (error) {
@@ -386,6 +403,85 @@ export function apply(ctx) {
     }
   }
 
+  /**
+   * The bypass tool. It exists only while the plugin setting allows it, so an
+   * ordinary session never sees it in the tool list.
+   */
+  function forceToolDefinition() {
+    return {
+      name: 'smart_compact_force',
+      description: FORCE_TOOL_DESCRIPTION,
+      parameters: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          reason: {
+            type: 'string',
+            description: 'One short line for the user, such as "testing the bypass".',
+          },
+        },
+      },
+      output: {
+        schema: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['text'],
+          properties: { text: { type: 'string' } },
+        },
+        render: (_args, value) => [{ type: 'text', text: value.text }],
+      },
+      async execute(args, exec) {
+        const agent = exec.agent
+        if (!agent) throw new Error('smart_compact_force requires an owning agent session')
+        // The registry above should make this unreachable; keep it honest anyway.
+        if (state.allowForce !== true) {
+          return { text: 'Not queued: the compaction bypass is turned off in the plugin settings.' }
+        }
+        const rec = ensure(agent.id)
+        const current = evaluate(agent.session, thresholdOf(rec), agent)
+        const line = reading(current)
+        if (current.budget.status === 'off') {
+          return { text: `Not queued: compaction is turned off for this session; the bypass never overrides off. ${line}` }
+        }
+        if (rec.pending) {
+          return { text: `Already queued for the end of this turn. ${line}` }
+        }
+        rec.pending = { requestedAt: Date.now(), reason: typeof args.reason === 'string' ? args.reason : '', force: true }
+        rec.attempts = 0
+        save()
+        return {
+          text: `Queued (forced) for the end of this turn: it runs regardless of pressure.\n${line}\nBefore you finish: write decisions, file paths and the next step to disk.`,
+        }
+      },
+    }
+  }
+
+  /**
+   * Mirror `state.allowForce` onto the prompt and the tool registry, so turning
+   * the setting on or off changes what the model can see on its next request.
+   */
+  function syncForce() {
+    const on = state.allowForce === true
+    if (on === (forceDisposers.length > 0)) return
+    if (on) {
+      forceDisposers.push(ctx.systemPrompt.section({
+        name: 'smart-compact-force',
+        order: 321,
+        text: FORCE_SECTION,
+      }))
+      forceDisposers.push(ctx.tools.register(forceToolDefinition()))
+      return
+    }
+    for (const dispose of forceDisposers) {
+      try {
+        dispose()
+      } catch {
+        // Unloading must continue past a failing disposer.
+      }
+    }
+    forceDisposers = []
+  }
+
   disposers.push(ctx.systemPrompt.section({
     name: 'smart-compact',
     order: 320,
@@ -393,6 +489,8 @@ export function apply(ctx) {
   }))
 
   disposers.push(ctx.tools.register(toolDefinition()))
+
+  syncForce()
 
   disposers.push(ctx.commands.register({
     definitionId: 'smart-compact',
@@ -415,7 +513,36 @@ export function apply(ctx) {
         const current = evaluate(agent.session, thresholdOf(rec), agent)
         return {
           kind: 'success',
-          text: `阈值 ${shapeOf(rec.threshold)} · ${describeBudgetZh(current)} · 压缩请求：${rec.pending ? '已排队' : '无'}`,
+          text: `阈值 ${shapeOf(rec.threshold)} · ${describeBudgetZh(current)} · 压缩请求：${rec.pending ? `已排队${rec.pending.force === true ? '（强制）' : ''}` : '无'} · 绕过开关：${state.allowForce === true ? '开' : '关'}`,
+        }
+      }
+      if (first === 'force') {
+        if (state.allowForce !== true) {
+          return {
+            kind: 'error',
+            text: '强制压缩未启用：请先在插件设置页打开「允许绕过阈值」。',
+          }
+        }
+        const current = evaluate(agent.session, thresholdOf(rec), agent)
+        if (current.budget.status === 'off') {
+          return {
+            kind: 'error',
+            text: `本会话已关闭压缩，强制模式不会覆盖关闭状态。${describeBudgetZh(current)}`,
+          }
+        }
+        if (rec.pending) {
+          return { kind: 'success', text: `已有压缩请求在排队。${describeBudgetZh(current)}` }
+        }
+        rec.pending = {
+          requestedAt: Date.now(),
+          reason: typeof second === 'string' ? second : 'manual force',
+          force: true,
+        }
+        rec.attempts = 0
+        save()
+        return {
+          kind: 'success',
+          text: `已强制排队：本回合结束后执行压缩，无视阈值与窗口。${describeBudgetZh(current)}`,
         }
       }
       if (first === 'off') {
@@ -429,7 +556,7 @@ export function apply(ctx) {
         if (percent === undefined) {
           return {
             kind: 'error',
-            text: '用法：/smart-compact [status|off|default|<百分比 30-99>]',
+            text: '用法：/smart-compact [status|off|default|force [原因]|<百分比 30-99>]',
           }
         }
         rec.threshold = { kind: 'percent', percent }
@@ -473,6 +600,14 @@ export function apply(ctx) {
     setDefaultPercent(percent) {
       state.defaultPercent = percent
       flush()
+      return true
+    },
+    allowForce: () => state.allowForce === true,
+    setAllowForce(value) {
+      state.allowForce = value === true
+      flush()
+      // The tool and its prompt section follow the switch immediately.
+      syncForce()
       return true
     },
     describeSession,
@@ -539,6 +674,14 @@ export function apply(ctx) {
         // Plugin unload must continue past a failing disposer.
       }
     }
+    for (const dispose of forceDisposers) {
+      try {
+        dispose()
+      } catch {
+        // Same as above; the bypass seats are optional.
+      }
+    }
+    forceDisposers = []
     flush()
   }
 }

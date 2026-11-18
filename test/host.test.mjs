@@ -19,9 +19,9 @@ let sessionCounter = 0
  * Harness runtime. Each context gets a fresh session id because policy state is
  * persisted per session and would otherwise leak between cases.
  */
-function createContext({ pressure: initialPressure = 700_000, withRoutes = false, compactionIn = 'host', compactCommand = false, compactExecute = false } = {}) {
+function createContext({ pressure: initialPressure = 700_000, window: initialWindow = WINDOW, withRoutes = false, compactionIn = 'host', compactCommand = false, compactExecute = false } = {}) {
   const sessionId = `session-${++sessionCounter}`
-  const registered = { section: null, tool: null, command: null, listeners: {}, routes: new Map() }
+  const registered = { section: null, sections: [], tools: [], tool: null, command: null, listeners: {}, routes: new Map() }
   const notices = []
   const messages = []
   const compactionCalls = []
@@ -52,8 +52,26 @@ function createContext({ pressure: initialPressure = 700_000, withRoutes = false
       if (name === 'commands') return this.commands
       return undefined
     },
-    systemPrompt: { section: (section) => { registered.section = section; return () => {} } },
-    tools: { register: (definition) => { registered.tool = definition; return () => {} } },
+    systemPrompt: {
+      section: (section) => {
+        registered.sections.push(section)
+        if (section.name === 'smart-compact') registered.section = section
+        return () => {
+          const at = registered.sections.indexOf(section)
+          if (at >= 0) registered.sections.splice(at, 1)
+        }
+      },
+    },
+    tools: {
+      register: (definition) => {
+        registered.tools.push(definition)
+        if (definition.name === 'smart_compact') registered.tool = definition
+        return () => {
+          const at = registered.tools.indexOf(definition)
+          if (at >= 0) registered.tools.splice(at, 1)
+        }
+      },
+    },
     commands: {
       register: (command) => { registered.command = command; return () => {} },
       find: (agent, name) => {
@@ -97,7 +115,7 @@ function createContext({ pressure: initialPressure = 700_000, withRoutes = false
   agent = {
     id: sessionId,
     session: {
-      requestContext: () => ({ contextWindow: WINDOW }),
+      requestContext: () => ({ contextWindow: initialWindow }),
       requestHeader: () => ({ config: { maxTokens: RESERVED } }),
     },
     /**
@@ -240,6 +258,124 @@ test('off refuses requests but keeps reporting the budget', async () => {
   dispose()
 })
 
+test('the bypass tool and prompt appear only while the plugin switch is on', async () => {
+  const { registered, dispose } = createContext({ withRoutes: true })
+  const names = () => registered.tools.map(tool => tool.name).sort()
+  const sections = () => registered.sections.map(section => section.name).sort()
+  assert.deepEqual(names(), ['smart_compact'])
+  assert.deepEqual(sections(), ['smart-compact'])
+
+  const on = await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: true }),
+  })
+  assert.equal(on.status, 200)
+  assert.deepEqual(on.json, { allowForce: true })
+  assert.deepEqual(names(), ['smart_compact', 'smart_compact_force'])
+  assert.deepEqual(sections(), ['smart-compact', 'smart-compact-force'])
+
+  const off = await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: false }),
+  })
+  assert.equal(off.status, 200)
+  assert.deepEqual(names(), ['smart_compact'])
+  assert.deepEqual(sections(), ['smart-compact'])
+  dispose()
+})
+
+test('a forced request runs at idle below the suggested line', async () => {
+  const { registered, agent, notices, compactionCalls, dispose } = createContext({ withRoutes: true, pressure: 100_000 })
+  await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: true }),
+  })
+  const forceTool = registered.tools.find(tool => tool.name === 'smart_compact_force')
+  const result = await forceTool.execute({ reason: 'testing bypass' }, { agent })
+  assert.match(result.text, /Queued \(forced\)/)
+  assert.match(result.text, /regardless of pressure/)
+  assert.match(result.text, /context 100k\/1\.05M \(10%\)/)
+
+  await registered.listeners['agent/status']({ agent, status: 'idle' })
+  assert.equal(compactionCalls.length, 1)
+  assert.match(notices[0], /forced bypass/)
+  await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: false }),
+  })
+  dispose()
+})
+
+test('the bypass never overrides a session that is off', async () => {
+  const { registered, agent, notices, compactionCalls, dispose } = createContext({ withRoutes: true, pressure: 100_000 })
+  await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: true }),
+  })
+  registered.command.handler({ agent, rawInput: 'off' })
+  const forceTool = registered.tools.find(tool => tool.name === 'smart_compact_force')
+  const result = await forceTool.execute({}, { agent })
+  assert.match(result.text, /never overrides off/)
+  await registered.listeners['agent/status']({ agent, status: 'idle' })
+  assert.equal(compactionCalls.length, 0)
+  assert.equal(notices.length, 0)
+  await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: false }),
+  })
+  dispose()
+})
+
+test('a forced request compacts even when the window is unknown', async () => {
+  const { registered, agent, notices, compactionCalls, dispose } = createContext({
+    withRoutes: true, pressure: 100_000, window: null,
+  })
+  const check = await registered.tool.execute({ action: 'check' }, { agent })
+  assert.match(check.text, /^context 100k/)
+  await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: true }),
+  })
+  const forceTool = registered.tools.find(tool => tool.name === 'smart_compact_force')
+  const result = await forceTool.execute({}, { agent })
+  assert.match(result.text, /Queued \(forced\)/)
+  await registered.listeners['agent/status']({ agent, status: 'idle' })
+  assert.equal(compactionCalls.length, 1)
+  assert.match(notices[0], /forced bypass/)
+  await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: false }),
+  })
+  dispose()
+})
+
+test('the human command refuses the bypass until the switch is on, then queues it', async () => {
+  const { registered, agent, compactionCalls, dispose } = createContext({ withRoutes: true, pressure: 100_000 })
+  const refused = registered.command.handler({ agent, rawInput: 'force' })
+  assert.equal(refused.kind, 'error')
+  assert.match(refused.text, /强制压缩未启用/)
+
+  await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: true }),
+  })
+  const queued = registered.command.handler({ agent, rawInput: 'force 测试' })
+  assert.equal(queued.kind, 'success')
+  assert.match(queued.text, /已强制排队/)
+  const status = registered.command.handler({ agent, rawInput: 'status' })
+  assert.match(status.text, /已排队（强制）/)
+  assert.match(status.text, /绕过开关：开/)
+
+  await registered.listeners['agent/status']({ agent, status: 'idle' })
+  assert.equal(compactionCalls.length, 1)
+  await callRoute(registered.routes, '/smart-compact/force', {
+    method: 'POST',
+    body: JSON.stringify({ allowForce: false }),
+  })
+  dispose()
+})
+
+
 test('a session percent is clamped below the rail and applies to the tool', async () => {
   const { registered, agent, dispose } = createContext({ pressure: 700_000 })
   const status = registered.command.handler({ agent, rawInput: '90' })
@@ -298,7 +434,7 @@ test('below the line no notice is sent', async () => {
 
 test('the settings routes describe and persist a session threshold', async () => {
   const { registered, sessionId, dispose } = createContext({ withRoutes: true })
-  assert.equal(registered.routes.size, 3)
+  assert.equal(registered.routes.size, 4)
 
   const initial = await callRoute(registered.routes, '/smart-compact/state', {
     url: `/smart-compact/state?sessionId=${sessionId}`,

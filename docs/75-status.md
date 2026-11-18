@@ -1,6 +1,24 @@
-# 75 · 阶段状态（2026-11-18 16:05）
+# 75 · 阶段状态（2026-11-18 16:25）
 
 给压缩后的自己：这是当前真实状态，不是计划。
+
+## 0.1.6：绕过阈值是插件页开关（默认关），工具/命令/prompt 跟随
+
+动机：要在很小上下文里验证压缩链路，而 30% 下限让廉价会话永远不达标。
+
+- `state.json` 新增全局 `allowForce`（默认 false，`migrateState` 保证缺失即关）；
+- 开启时注册 `smart_compact_force` 工具 + 一段 prompt（order 321）+ `/smart-compact force [原因]`；
+  关闭时立即 dispose，模型下一次请求就看不到；
+- 强制请求写 `pending.force = true`，执行层跳过阈值 / 未知窗口 / 压力三项判断；
+- **off 不绕过**（工具与命令都明确报错）；仍只在回合结束后执行一次，
+  通知标为 `Compacted older history (forced bypass); ~N tokens freed`；
+- 新增路由 `POST /smart-compact/force`（`{allowForce: boolean}`），`GET /state` 回带开关；
+- 插件页多一个勾选 + 说明；模型菜单行在开启时显示「绕过已开启」。
+
+测试：44 个全过（policy 12 / host 21 / routes 9 / client 2）。
+
+**注意**：改的是 `index.js` 与 `client.js`，以 `link:` 安装的实例需要重启宿主
+（或重载插件）才会出现开关与新工具；浏览器端还要刷新页面以加载新的 client bundle。
 
 ## 0.1.5：通过 `/compact` 命令派发，并让用户看得见
 

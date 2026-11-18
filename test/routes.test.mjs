@@ -30,6 +30,8 @@ function createApi() {
     defaultPercent: () => 60,
     minPercent: () => 30,
     setDefaultPercent(percent) { calls.push(['default', percent]); return true },
+    allowForce: () => false,
+    setAllowForce(value) { calls.push(['force', value]); return true },
     describeSession(id) {
       return {
         id,
@@ -84,6 +86,7 @@ test('GET /state returns the default and the session view', async () => {
   assert.equal(all.status, 200)
   assert.equal(all.headers['cache-control'], 'no-store')
   assert.equal(all.json.defaultPercent, 60)
+  assert.equal(all.json.allowForce, false)
   assert.equal(all.json.session, null)
 
   const withId = await call(routes, '/smart-compact/state', {
@@ -195,10 +198,28 @@ test('POST /default validates media type, size, and range', async () => {
   assert.deepEqual(api.calls.at(-1), ['default', 50])
 })
 
+test('POST /force toggles the bypass switch and validates its body', async () => {
+  const { ctx, routes } = createComposition()
+  const api = createApi()
+  mountRoutes(ctx, api)
+
+  const on = await call(routes, '/smart-compact/force', { method: 'POST', body: '{"allowForce":true}' })
+  assert.equal(on.status, 200)
+  assert.deepEqual(on.json, { allowForce: true })
+  assert.deepEqual(api.calls.at(-1), ['force', true])
+
+  const bad = await call(routes, '/smart-compact/force', { method: 'POST', body: '{"allowForce":"yes"}' })
+  assert.equal(bad.status, 400)
+
+  const read = await call(routes, '/smart-compact/force')
+  assert.equal(read.status, 405)
+  assert.equal(read.headers.allow, 'POST')
+})
+
 test('the disposer removes every route', () => {
   const { ctx, routes } = createComposition()
   const dispose = mountRoutes(ctx, createApi())
-  assert.equal(routes.size, 3)
+  assert.equal(routes.size, 4)
   dispose()
   assert.equal(routes.size, 0)
 })

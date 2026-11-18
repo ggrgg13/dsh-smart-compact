@@ -91,6 +91,8 @@ export function parseWindow(value) {
  * @param {() => number} api.defaultPercent current global default
  * @param {(percent: number) => boolean} api.setDefaultPercent persist a new global default
  * @param {() => number} api.minPercent lowest allowed percent
+ * @param {() => boolean} api.allowForce whether the bypass switch is on
+ * @param {(value: boolean) => boolean} api.setAllowForce persist the bypass switch
  * @param {(sessionId: string) => object} api.describeSession thresholds for one session
  * @param {(sessionId: string, threshold: object) => object} api.setSessionThreshold stage a session threshold
  * @param {string} [api.prefix] route prefix
@@ -178,6 +180,7 @@ export function mountRoutes(ctx, api) {
       sendJson(res, 200, {
         defaultPercent: api.defaultPercent(),
         minPercent: api.minPercent(),
+        allowForce: api.allowForce?.() === true,
         session: sessionId === null ? null : api.describeSession(sessionId, windowHint),
       })
     },
@@ -229,6 +232,30 @@ export function mountRoutes(ctx, api) {
         return
       }
       sendJson(res, 200, { defaultPercent: percent })
+    },
+  }))
+
+  disposers.push(ctx.webServer.register({
+    kind: 'exact',
+    path: `${prefix}/force`,
+    handler: async (req, res) => {
+      if (rejected(req, res)) return
+      if (req.method !== 'POST') {
+        allow(res, 'POST')
+        return
+      }
+      const body = await readJson(req, res)
+      if (body === undefined) return
+      if (typeof body.allowForce !== 'boolean') {
+        sendJson(res, 400, { code: 'bad-request', message: 'allowForce must be a boolean' })
+        return
+      }
+      const saved = typeof api.setAllowForce === 'function' ? api.setAllowForce(body.allowForce) : false
+      if (saved !== true) {
+        sendJson(res, 500, { code: 'persist-failed', message: 'the bypass switch could not be saved' })
+        return
+      }
+      sendJson(res, 200, { allowForce: body.allowForce })
     },
   }))
 

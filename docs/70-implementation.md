@@ -14,14 +14,14 @@ Host 半与 Client 半都已实现，32 个测试通过。**尚未安装到 prof
 |---|---|
 | `policy.js` | 纯函数：rail / 百分比夹紧 / 迁移 v1 模式 / 读数格式化。无 Harness 依赖。 |
 | `index.js` | Host 插件：工具、prompt 段、命令、idle 执行器、跨阈值提醒、状态持久化、设置门面。 |
-| `routes.js` | 三条 HTTP 路由 + 信任栅栏 + 线上校验；同样无 Harness 依赖，可单测。 |
-| `client.js` | Client 半：模型菜单一行（含面板）、插件页默认阈值、中英文案。 |
+| `routes.js` | 四条 HTTP 路由 + 信任栅栏 + 线上校验；同样无 Harness 依赖，可单测。 |
+| `client.js` | Client 半：模型菜单一行（含面板）、插件页默认阈值与绕过开关、中英文案。 |
 | `cordis.patch.yml` | 插入一行 `smart-compact`（Host 半）；Client 半由 `dsh.client` 声明加载。 |
 | `package.json` | bundle 清单：`dsh.bundle.patch` + `dsh.client`（`platform: 'web'`）+ `exports['./client']`。 |
 | `locale/{en,zh}.json` | 插件卡片元数据（`meta.title/description/detail`），供插件管理器读取。 |
-| `test/policy.test.mjs` | 11 个策略测试（rail、夹紧、窗口过小、迁移、读数文案）。 |
-| `test/host.test.mjs` | 11 个集成测试（假 Cordis context，跑真实注册与执行路径）。 |
-| `test/routes.test.mjs` | 8 个路由测试（栅栏、方法、媒体类型、体积上限、字段校验、卸载）。 |
+| `test/policy.test.mjs` | 12 个策略测试（rail、夹紧、窗口过小、迁移、绕过开关、读数文案）。 |
+| `test/host.test.mjs` | 21 个集成测试（假 Cordis context，跑真实注册与执行路径，含绕过开关的可见性）。 |
+| `test/routes.test.mjs` | 9 个路由测试（栅栏、方法、媒体类型、体积上限、字段校验、绕过开关、卸载）。 |
 | `test/client.test.mjs` | 2 个客户端测试（bundle 注册、两个槽的注册参数）。 |
 
 ## 运行行为
@@ -30,19 +30,26 @@ Host 半与 Client 半都已实现，32 个测试通过。**尚未安装到 prof
 2. 注册 `smart_compact` 工具：
    - `check` 返回 `context 700k/1.05M (67%) · suggested 60% (629k) · built-in rail 69% (727k) · ...`；
    - `request` 在低于阈值、关闭、已有 pending 时明确拒绝，否则登记 pending。
-3. 注册 `/smart-compact` 命令（面向人，输出中文）：`status|off|on|default|<百分比>`。
-4. `agent/status === 'idle'` 时消费 pending：
+3. 注册 `/smart-compact` 命令（面向人，输出中文）：`status|off|on|default|force [原因]|<百分比>`。
+4. 绕过开关（全局 `allowForce`，默认关）：开启时额外注册 `smart_compact_force` 工具与一段
+   prompt（order 321），关闭时立即 dispose；`POST /smart-compact/force` 切换，进程重启后从
+   `state.json` 恢复。
+5. `agent/status === 'idle'` 时消费 pending：
+   - 已关闭（off）→ 丢弃（绕过也不例外）；
+   - `pending.force` → 跳过阈值/窗口/压力三项判断，直接压缩；
    - 仍低于阈值 → 丢弃并通知；
    - 否则 `ctx.compaction.compactNow(agent, signal)`；
    - `busy` 时保留请求，下个 idle 重试一次；
-   - 成功/失败/无可用范围都写一条回执（`agent.inject`，不唤醒会话）。
-5. `agent/pre-step` 时若压力首次越阈值，注入一次提醒；回落到 90% 以下后复位。
-6. 每会话状态写入 `<DSH_PROFILE_DIR>/smart-compact/state.json`（150ms 防抖，v2 结构）。
-7. 注册 `webServer` 路由（仅当组合里存在 `webServer` 与 `connection` 两个服务）：
-   - `GET /smart-compact/state?sessionId=…`
+   - 成功/失败/无可用范围都写一条回执（`agent.inject`，不唤醒会话），强制运行标
+     `(forced bypass)`。
+6. `agent/pre-step` 时若压力首次越阈值，注入一次提醒；回落到 90% 以下后复位。
+7. 每会话状态写入 `<DSH_PROFILE_DIR>/smart-compact/state.json`（150ms 防抖，v2 结构）。
+8. 注册 `webServer` 路由（仅当组合里存在 `webServer` 与 `connection` 两个服务）：
+   - `GET /smart-compact/state?sessionId=…`（含 `allowForce`）
    - `POST /smart-compact/session`
    - `POST /smart-compact/default`
-8. Client 半在 `conversation.input.model.options` 注册一行、在 `plugins.bundle.config` 注册插件页控制。
+   - `POST /smart-compact/force`
+9. Client 半在 `conversation.input.model.options` 注册一行、在 `plugins.bundle.config` 注册插件页控制。
 
 ## 实现期的设计决定
 

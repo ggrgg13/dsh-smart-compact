@@ -28,6 +28,7 @@ window.__ModuleLoader__.load({
     const STATE_PATH = '/smart-compact/state'
     const SESSION_PATH = '/smart-compact/session'
     const DEFAULT_PATH = '/smart-compact/default'
+    const FORCE_PATH = '/smart-compact/force'
     const STYLE_ID = 'dsh-smart-compact-style'
 
     const en = {
@@ -57,6 +58,9 @@ window.__ModuleLoader__.load({
       'settings.retry': 'Retry',
       'settings.saveFailed': 'Could not save: {message}',
       'settings.saved': 'Saved',
+      'settings.bypass': 'Allow the bypass (testing)',
+      'settings.bypassHint': 'Adds /smart-compact force and a smart_compact_force tool. Both skip the suggested line — never an off session. Turn it off when testing ends.',
+      'panel.bypass': 'Bypass on: /smart-compact force',
     }
 
     const zh = {
@@ -86,6 +90,9 @@ window.__ModuleLoader__.load({
       'settings.retry': '重试',
       'settings.saveFailed': '保存失败：{message}',
       'settings.saved': '已保存',
+      'settings.bypass': '允许绕过阈值（测试用）',
+      'settings.bypassHint': '开启后才有 /smart-compact force 和 smart_compact_force 工具，两者都无视建议线，但已关闭的会话依然不压。测试完请关掉。',
+      'panel.bypass': '绕过已开启：/smart-compact force',
     }
 
     /**
@@ -152,6 +159,12 @@ window.__ModuleLoader__.load({
 .dsc-link { padding: 0; border: 0; background: transparent; color: var(--dsw-alias-state-business-primary, #4d6bfe); font-family: inherit; font-size: 11px; cursor: pointer; text-decoration: underline; align-self: flex-start; }
 .dsc-page { display: flex; flex-direction: column; gap: 8px; max-width: 460px; }
 .dsc-pageValue { color: var(--dsw-alias-label-primary, #1f1f1f); font-size: 20px; font-variant-numeric: tabular-nums; }
+.dsc-check {
+  display: flex; align-items: center; gap: 8px; margin-top: 4px;
+  color: var(--dsw-alias-label-primary, #1f1f1f); font-family: inherit; font-size: 13px; line-height: 20px;
+  cursor: pointer;
+}
+.dsc-check input { margin: 0; accent-color: var(--dsw-alias-state-business-primary, #4d6bfe); }
 `
 
     /** Inject the stylesheet once per page. */
@@ -431,6 +444,9 @@ window.__ModuleLoader__.load({
             ? h('div', { key: 'capped', className: 'dsc-caption' }, fill(t('panel.capped'), { percent: session.percent }))
             : null,
           unknownWindow ? h('div', { key: 'unknown', className: 'dsc-caption' }, t('panel.unknownWindow')) : null,
+          state !== null && state.allowForce === true
+            ? h('div', { key: 'bypass', className: 'dsc-caption' }, t('panel.bypass'))
+            : null,
           failure === null ? null : h('div', { key: 'failure', className: 'dsc-caption dsc-error' }, failure),
           failure === null ? null : h(LinkButton, { key: 'retry', onClick: () => { void load() } }, t('panel.retry')),
         ]) : null,
@@ -447,6 +463,7 @@ window.__ModuleLoader__.load({
       const [state, setState] = useState(null)
       const [failure, setFailure] = useState(null)
       const [saved, setSaved] = useState(false)
+      const [bypassSaving, setBypassSaving] = useState(false)
       const [loading, setLoading] = useState(true)
       const [draft, setDraft] = useState(null)
       const timer = useRef(undefined)
@@ -472,6 +489,22 @@ window.__ModuleLoader__.load({
           })
           .catch((error) => { setFailure(fill(t('settings.saveFailed'), { message: error.message })) })
           .finally(() => { setDraft(null) })
+      }
+
+      /** The bypass is a global switch: turning it on or off changes what the
+       *  model and the user can reach, so it saves immediately. */
+      const toggleBypass = (next) => {
+        setFailure(null)
+        setBypassSaving(true)
+        postJson(FORCE_PATH, { allowForce: next })
+          .then(() => {
+            setState((current) => (current === null ? current : { ...current, allowForce: next }))
+            setSaved(true)
+            if (timer.current !== undefined) clearTimeout(timer.current)
+            timer.current = setTimeout(() => { setSaved(false) }, 1600)
+          })
+          .catch((error) => { setFailure(fill(t('settings.saveFailed'), { message: error.message })) })
+          .finally(() => { setBypassSaving(false) })
       }
 
       if (loading && state === null) return h('div', { className: 'dsc-caption' }, t('settings.loading'))
@@ -501,6 +534,17 @@ window.__ModuleLoader__.load({
           onCommit: commit,
         }),
         h('div', { key: 'clamp', className: 'dsc-caption' }, t('settings.clampHint')),
+        h('label', { key: 'bypass', className: 'dsc-check' }, [
+          h('input', {
+            key: 'box',
+            type: 'checkbox',
+            checked: state.allowForce === true,
+            disabled: bypassSaving,
+            onChange: (event) => { toggleBypass(event.target.checked) },
+          }),
+          h('span', { key: 'text' }, t('settings.bypass')),
+        ]),
+        h('div', { key: 'bypassHint', className: 'dsc-caption' }, t('settings.bypassHint')),
         saved ? h('div', { key: 'saved', className: 'dsc-caption' }, t('settings.saved')) : null,
         failure === null ? null : h('div', { key: 'failure', className: 'dsc-caption dsc-error' }, failure),
       ])

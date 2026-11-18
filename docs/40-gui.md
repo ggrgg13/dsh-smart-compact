@@ -83,21 +83,28 @@ thresholdTokens = round(window * effective / 100)
 ├──────●────────┤
 新会话从这里开始；单个会话可以在模型菜单里覆盖。
 超过系统线时，每个会话会按自己的上限截断。
+☐ 允许绕过阈值（测试用）
+开启后才有 /smart-compact force 和 smart_compact_force 工具，两者都无视建议线，
+但已关闭的会话依然不压。测试完请关掉。
 ```
 
 - 范围 30–90。插件页没有会话与模型，不显示占用和系统线；夹紧发生在使用时。
+- 绕过开关是全局 `allowForce`（默认关，持久化在 `state.json`）。勾选立即写
+  `POST /smart-compact/force`，Host 同步注册/注销工具与 prompt 段；模型菜单行在开启时
+  显示一行「绕过已开启：/smart-compact force」。
 - 样式照宿主表单：同一间距、同一输入尺寸、同一主题 token，不引入自定义配色。
 
 ## 设置通道：一条小路由
 
 DSH 的 Host 已有 `webServer.register` 与 `connection.requestRejection`（`webserver` / `connection` 是
-`dsh-web-app` 的宿主行，属 DSH 自身）。插件注册三个精确路由：
+`dsh-web-app` 的宿主行，属 DSH 自身）。插件注册四个精确路由：
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
-| GET | `/smart-compact/state?sessionId=<id>` | 返回全局默认、下限、会话覆盖、生效阈值、上限、系统线 |
+| GET | `/smart-compact/state?sessionId=<id>` | 返回全局默认、下限、绕过开关、会话覆盖、生效阈值、上限、系统线 |
 | POST | `/smart-compact/session` | `{ sessionId, threshold }` 写会话覆盖 |
 | POST | `/smart-compact/default` | `{ defaultPercent }` 写全局默认 |
+| POST | `/smart-compact/force` | `{ allowForce: boolean }` 写绕过开关 |
 
 响应统一 `application/json; charset=utf-8`、`Cache-Control: no-store`。
 
@@ -108,6 +115,7 @@ DSH 的 Host 已有 `webServer.register` 与 `connection.requestRejection`（`we
 - `threshold.kind` 必须属于 `default|percent|off`，`percent` 必须是 1–100 的整数，
   之后由服务端夹紧到 `30 … maxPercent`；
 - `defaultPercent` 必须是 30–100 的整数；
+- `allowForce` 必须是布尔值（缺省或非布尔一律 400，避免 "truthy 即开"）；
 - `sessionId` 只校验形状（`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`），不要求会话存活：
   设置可以先于会话存在（比如刚切走的旧会话），回 404 只会让面板抖动；
 - 浏览器信任栅栏全部委托 `connection.requestRejection(req)`：它的 Host/Origin 检查

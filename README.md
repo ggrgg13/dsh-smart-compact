@@ -5,10 +5,18 @@
 
 ## 状态
 
-Host 半与 Client 半都已实现，32 个测试通过；**尚未安装到 profile**（安装放在功能满意之后）。
+Host 半与 Client 半都已实现，44 个测试通过；以 `link:` 装在 desktop profile
+（改动 `index.js` / `client.js` 后需重启宿主并刷新页面才生效）。
 M0 可行性 spike 的静态部分已完成，结论见 `docs/spike-results.md`。
 实现细节与未验证项见 `docs/70-implementation.md`。设计基于实际安装的 DSH 0.2.2-rc.3
 （Desktop / profile `desktop`）核对，事实清单见 `docs/10-facts.md`。
+
+## 绕过阈值（默认关闭）
+
+插件设置页有一个「允许绕过阈值（测试用）」开关。关闭时（默认）不存在任何绕过入口；
+打开后才出现 `smart_compact_force` 工具与 `/smart-compact force` 命令，
+两者都无视建议线、窗口与压力，但**已关闭（off）的会话依然不压**。
+用于在很小的上下文里验收压缩链路，测试完请关掉。
 
 ## 一句话结论
 
