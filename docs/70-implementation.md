@@ -4,7 +4,7 @@
 
 ## 结论
 
-Host 半与 Client 半都已实现，29 个测试通过。**尚未安装到 profile**，所以真实运行时行为
+Host 半与 Client 半都已实现，32 个测试通过。**尚未安装到 profile**，所以真实运行时行为
 （`compactNow` 在 idle 的时序、浏览器栅栏与 cookie、客户端 bundle 的加载与渲染）
 还没有在 DSH 里验证过——按约定，安装放在功能满意之后一次性做。
 
@@ -20,8 +20,8 @@ Host 半与 Client 半都已实现，29 个测试通过。**尚未安装到 prof
 | `package.json` | bundle 清单：`dsh.bundle.patch` + `dsh.client`（`platform: 'web'`）+ `exports['./client']`。 |
 | `locale/{en,zh}.json` | 插件卡片元数据（`meta.title/description/detail`），供插件管理器读取。 |
 | `test/policy.test.mjs` | 11 个策略测试（rail、夹紧、窗口过小、迁移、读数文案）。 |
-| `test/host.test.mjs` | 9 个集成测试（假 Cordis context，跑真实注册与执行路径）。 |
-| `test/routes.test.mjs` | 7 个路由测试（栅栏、方法、媒体类型、体积上限、字段校验、卸载）。 |
+| `test/host.test.mjs` | 11 个集成测试（假 Cordis context，跑真实注册与执行路径）。 |
+| `test/routes.test.mjs` | 8 个路由测试（栅栏、方法、媒体类型、体积上限、字段校验、卸载）。 |
 | `test/client.test.mjs` | 2 个客户端测试（bundle 注册、两个槽的注册参数）。 |
 
 ## 运行行为
@@ -78,8 +78,8 @@ Host 半与 Client 半都已实现，29 个测试通过。**尚未安装到 prof
 已做：
 
 - `node --check index.js` / `client.js` 通过。
-- `node test/policy.test.mjs` 11/11、`test/host.test.mjs` 9/9、
-  `test/routes.test.mjs` 7/7、`test/client.test.mjs` 2/2。
+- `node test/policy.test.mjs` 11/11、`test/host.test.mjs` 11/11、
+  `test/routes.test.mjs` 8/8、`test/client.test.mjs` 2/2。
 
 未做（需要在 DSH 里安装后验证）：
 

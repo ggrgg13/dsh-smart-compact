@@ -19,12 +19,13 @@ let sessionCounter = 0
  * Harness runtime. Each context gets a fresh session id because policy state is
  * persisted per session and would otherwise leak between cases.
  */
-function createContext({ pressure: initialPressure = 700_000 } = {}) {
+function createContext({ pressure: initialPressure = 700_000, withRoutes = false } = {}) {
   const sessionId = `session-${++sessionCounter}`
-  const registered = { section: null, tool: null, command: null, listeners: {} }
+  const registered = { section: null, tool: null, command: null, listeners: {}, routes: new Map() }
   const notices = []
   const compactionCalls = []
   let pressure = initialPressure
+  let agent
   const ctx = {
     get(name) {
       if (name === 'tokenMeter') {
@@ -43,6 +44,9 @@ function createContext({ pressure: initialPressure = 700_000 } = {}) {
           },
         }
       }
+      if (name === 'agents') {
+        return { get: (id) => (id === sessionId ? agent : undefined) }
+      }
       return undefined
     },
     systemPrompt: { section: (section) => { registered.section = section; return () => {} } },
@@ -50,7 +54,24 @@ function createContext({ pressure: initialPressure = 700_000 } = {}) {
     commands: { register: (command) => { registered.command = command; return () => {} } },
     on: (event, listener) => { registered.listeners[event] = listener; return () => {} },
   }
-  const agent = {
+  if (withRoutes) {
+    ctx.webServer = {
+      register(route) {
+        registered.routes.set(route.path, route)
+        return () => { registered.routes.delete(route.path) }
+      },
+    }
+    ctx.connection = { requestRejection: () => undefined }
+    ctx.effect = (factory) => {
+      const dispose = factory()
+      return typeof dispose === 'function' ? dispose : () => {}
+    }
+    ctx.inject = (deps, callback) => {
+      callback(ctx)
+      return { dispose() {} }
+    }
+  }
+  agent = {
     id: sessionId,
     session: {
       requestContext: () => ({ contextWindow: WINDOW }),
@@ -59,7 +80,33 @@ function createContext({ pressure: initialPressure = 700_000 } = {}) {
     inject: async (input) => { notices.push(input.content.map(block => block.text).join('')) },
   }
   const dispose = apply(ctx)
-  return { ctx, agent, registered, notices, compactionCalls, dispose }
+  return { ctx, agent, sessionId, registered, notices, compactionCalls, dispose }
+}
+
+/** Drive one registered route the way the browser would. */
+async function callRoute(routes, path, { method = 'GET', body, url } = {}) {
+  const route = routes.get(path)
+  assert.ok(route, `no route for ${path}`)
+  const req = {
+    method,
+    url: url ?? path,
+    headers: { host: '127.0.0.1:59593', 'content-type': 'application/json' },
+    async *[Symbol.asyncIterator]() {
+      if (body !== undefined) yield Buffer.from(body)
+    },
+    resume() {},
+  }
+  const res = {
+    statusCode: 200,
+    headers: {},
+    setHeader(name, value) { this.headers[name] = value },
+    end(payload) { this.body = payload === undefined ? '' : String(payload) },
+  }
+  await route.handler(req, res)
+  return {
+    status: res.statusCode,
+    json: res.body === undefined || res.body === '' ? undefined : JSON.parse(res.body),
+  }
 }
 
 test('registers the policy section, the tool and the command', () => {
@@ -149,5 +196,63 @@ test('below the line no notice is sent', async () => {
   await registered.listeners['agent/pre-step']({ agent }, next)
   assert.equal(notices.length, 0)
   assert.ok(DEFAULT_LINE > 100_000)
+  dispose()
+})
+
+test('the settings routes describe and persist a session threshold', async () => {
+  const { registered, sessionId, dispose } = createContext({ withRoutes: true })
+  assert.equal(registered.routes.size, 3)
+
+  const initial = await callRoute(registered.routes, '/smart-compact/state', {
+    url: `/smart-compact/state?sessionId=${sessionId}`,
+  })
+  assert.equal(initial.status, 200)
+  assert.equal(initial.json.defaultPercent, 60)
+  assert.equal(initial.json.session.threshold.kind, 'default')
+  assert.equal(initial.json.session.percent, 60)
+  assert.equal(initial.json.session.thresholdTokens, DEFAULT_LINE)
+  assert.equal(initial.json.session.maxPercent, 67)
+
+  const written = await callRoute(registered.routes, '/smart-compact/session', {
+    method: 'POST',
+    body: JSON.stringify({ sessionId, threshold: { kind: 'percent', percent: 45 } }),
+  })
+  assert.equal(written.status, 200)
+  assert.equal(written.json.percent, 45)
+  assert.equal(written.json.thresholdTokens, Math.floor((WINDOW * 45) / 100))
+
+  const reread = await callRoute(registered.routes, '/smart-compact/state', {
+    url: `/smart-compact/state?sessionId=${sessionId}`,
+  })
+  assert.equal(reread.json.session.percent, 45)
+
+  const raised = await callRoute(registered.routes, '/smart-compact/default', {
+    method: 'POST',
+    body: JSON.stringify({ defaultPercent: 50 }),
+  })
+  assert.equal(raised.status, 200)
+  const afterDefault = await callRoute(registered.routes, '/smart-compact/state')
+  assert.equal(afterDefault.json.defaultPercent, 50)
+  dispose()
+})
+
+test('a window hint fills in a session the host cannot size itself', async () => {
+  const { registered, dispose } = createContext({ withRoutes: true })
+  // The state file is shared by every context in this process, so read the
+  // default the earlier test left behind instead of assuming 60.
+  const current = await callRoute(registered.routes, '/smart-compact/state')
+  const defaultPercent = current.json.defaultPercent
+  const hinted = await callRoute(registered.routes, '/smart-compact/state', {
+    url: '/smart-compact/state?sessionId=not-live&window=1048576',
+  })
+  assert.equal(hinted.status, 200)
+  assert.equal(hinted.json.session.status, 'ok')
+  assert.equal(hinted.json.session.percent, defaultPercent)
+  assert.equal(hinted.json.session.thresholdTokens, Math.floor((WINDOW * defaultPercent) / 100))
+
+  const unhinted = await callRoute(registered.routes, '/smart-compact/state', {
+    url: '/smart-compact/state?sessionId=not-live',
+  })
+  assert.equal(unhinted.json.session.status, 'unknown-window')
   dispose()
 })
