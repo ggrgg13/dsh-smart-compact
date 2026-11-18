@@ -87,7 +87,7 @@ Host 半与 Client 半都已实现，32 个测试通过。**尚未安装到 prof
 
 未做（需要在 DSH 里安装后验证）：
 
-- [ ] 本地链接安装后，Loader 能解析 `@local/dsh-smart-compact` 这一行。
+- [ ] 本地链接安装后，Loader 能解析 `dsh-smart-compact` 这一行。
 - [ ] 工具用标准 JSON Schema 注册（代替 `defineTool`）能通过输出值校验。
 - [ ] 回合结束进入 idle 时 `compactNow` 成功，Chat 出现 manual-compaction 节点。
 - [ ] 用户紧接着发消息时 `busy` 在下一个 idle 重试一次。

@@ -10,7 +10,7 @@
  * Kept free of Harness imports so the wire contract stays testable with plain
  * Node.
  *
- * @module @local/dsh-smart-compact/routes
+ * @module dsh-smart-compact/routes
  */
 
 /** Largest body any route accepts; the payloads are three small numbers. */

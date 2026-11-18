@@ -158,8 +158,8 @@ const rejected = (req, res): boolean => {
 > on the bundle's page between its description and its rows (`view: 'page'` only).
 
 - 只支持 `view: 'page'`，正好是计划里"插件页默认阈值"的座位。
-- key = 包名。我们的包名 = bundle 名 = `@local/dsh-smart-compact`，所以
-  `ctx.slots.register({ name: 'plugins.bundle.config', key: '@local/dsh-smart-compact', ... })`。
+- key = 包名。我们的包名 = bundle 名 = `dsh-smart-compact`，所以
+  `ctx.slots.register({ name: 'plugins.bundle.config', key: 'dsh-smart-compact', ... })`。
 
 ### `conversation.input.model.options`
 

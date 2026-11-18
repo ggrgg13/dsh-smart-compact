@@ -1,5 +1,5 @@
 /**
- * @local/dsh-smart-compact — Client half.
+ * dsh-smart-compact — Client half.
  *
  * Two seats:
  *
@@ -17,7 +17,7 @@
  */
 
 window.__ModuleLoader__.load({
-  id: '@local/dsh-smart-compact',
+  id: 'dsh-smart-compact',
   factory: (require) => {
     var module = { exports: {} }
     var exports = module.exports
@@ -461,7 +461,7 @@ window.__ModuleLoader__.load({
 
       ctx.slots.inject('plugins.bundle.config', () => ctx.slots.register({
         name: 'plugins.bundle.config',
-        key: '@local/dsh-smart-compact',
+        key: 'dsh-smart-compact',
         locale: NS,
       }, SmartCompactSettings))
     }

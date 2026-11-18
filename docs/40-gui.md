@@ -75,7 +75,7 @@ thresholdTokens = round(window * effective / 100)
 
 ## 插件设置页
 
-槽位 `plugins.bundle.config`，key 为包名 `@local/dsh-smart-compact`，用 `view: 'page'` 渲染：
+槽位 `plugins.bundle.config`，key 为包名 `dsh-smart-compact`，用 `view: 'page'` 渲染：
 
 ```
 默认压缩阈值
@@ -173,7 +173,7 @@ DSH 的 Host 已有 `webServer.register` 与 `connection.requestRejection`（`we
 
 另外：UI 文案直接写在 `client.js` 里（客户端 bundle 读不到包的 JSON 文件），
 `locale/*.json` 只保留插件卡片元数据；行注册带自己的 `id: 'smart-compact'`，
-插件页的 key 是包名 `@local/dsh-smart-compact`。
+插件页的 key 是包名 `dsh-smart-compact`。
 
 工具名用 `smart_compact` 而不是 `compact_context`：`ctx.tools.register` 对重名是**直接抛错**，
 而 `compact_context` 是任何压缩类插件都会想到的名字；带上插件自己的名字空间后，

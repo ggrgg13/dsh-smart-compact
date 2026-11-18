@@ -6,7 +6,7 @@
  * follows the Harness' own compaction configuration; the user picks a suggested
  * watermark as a percentage of the window, kept below the built-in rail.
  *
- * @module @local/dsh-smart-compact
+ * @module dsh-smart-compact
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'

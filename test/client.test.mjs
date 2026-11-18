@@ -28,7 +28,7 @@ const requireStub = (specifier) => {
 }
 
 test('the bundle registers under the package id with a factory', () => {
-  assert.equal(registration.id, '@local/dsh-smart-compact')
+  assert.equal(registration.id, 'dsh-smart-compact')
   const exports = registration.factory(requireStub)
   assert.equal(exports.name, 'smart-compact')
   assert.deepEqual(exports.inject, ['slots', 'locale'])
@@ -72,6 +72,6 @@ test('apply registers the locale table and both slots', () => {
   assert.equal(typeof slots[0][2], 'function')
 
   const page = slots[1][1]
-  assert.equal(page.key, '@local/dsh-smart-compact')
+  assert.equal(page.key, 'dsh-smart-compact')
   assert.equal(typeof slots[1][2], 'function')
 })

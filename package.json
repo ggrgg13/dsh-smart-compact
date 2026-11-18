@@ -1,8 +1,8 @@
 {
-  "name": "@local/dsh-smart-compact",
+  "name": "dsh-smart-compact",
   "version": "0.1.0",
-  "private": true,
   "description": "Agent-requested context compaction at turn boundaries, with a per-session suggested threshold kept below the Harness' own compaction rail.",
+  "license": "MIT",
   "type": "module",
   "main": "index.js",
   "exports": {
@@ -28,6 +28,21 @@
   "engines": {
     "dsh": ">=0.2.2-rc.1"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ggrgg13/dsh-smart-compact.git"
+  },
+  "homepage": "https://github.com/ggrgg13/dsh-smart-compact#readme",
+  "bugs": {
+    "url": "https://github.com/ggrgg13/dsh-smart-compact/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "context",
+    "compaction"
+  ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
