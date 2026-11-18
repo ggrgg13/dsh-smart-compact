@@ -192,17 +192,48 @@ export function apply(ctx) {
     }
   }
 
+  /**
+   * Run one manual compaction for an idle agent.
+   *
+   * The Host plane may have no compaction service at all: `dsh-web-app` disables
+   * `compaction-basic` there and each agent preset mounts its own backend inside
+   * an isolated `cordis:group`. Isolation keeps that service invisible to the
+   * Agent object too (`agent.ctx` is the process-wide loop runtime, not the
+   * preset group), so the only reachable seam is the `/compact` command the same
+   * preset registers: `commands.find(agent, 'compact')` resolves it through the
+   * agent's scope chain, and its handler closes over the isolated service.
+   *
+   * @param agent idle agent whose next-turn admission the compaction reserves
+   * @param signal cancellation for this attempt
+   * @returns `{ status: 'unavailable' | 'empty' | 'done' | 'failed', text? }`
+   */
+  async function compactNow(agent, signal) {
+    const direct = compactionFor(agent)
+    if (direct !== undefined) {
+      const result = await direct.compactNow(agent, signal)
+      return result == null ? { status: 'empty' } : { status: 'done' }
+    }
+    const definition = ctx.get('commands')?.find?.(agent, 'compact')
+    if (definition === undefined) return { status: 'unavailable' }
+    // Calling the handler directly keeps the run out of the session's command log
+    // (it would render as if the user typed `/compact`); the compaction markers
+    // the backend writes are the durable record instead.
+    const result = await definition.handler({
+      commandId: undefined,
+      agent,
+      rawInput: '',
+      attachments: [],
+      signal,
+    })
+    if (result?.kind === 'error') return { status: 'failed', text: result.text }
+    const text = typeof result?.text === 'string' ? result.text : ''
+    return text.includes('No compactable history') ? { status: 'empty' } : { status: 'done' }
+  }
+
   async function runPending(agent) {
     if (running.has(agent.id)) return
     const rec = record(agent.id)
     if (!rec?.pending) return
-    const compaction = compactionFor(agent)
-    if (!compaction) {
-      rec.pending = null
-      save()
-      await notify(agent, 'Compaction request dropped: no compaction backend is mounted.')
-      return
-    }
     const current = evaluate(agent.session, thresholdOf(rec), agent)
     if (current.budget.status === 'off') {
       rec.pending = null
@@ -234,10 +265,13 @@ export function apply(ctx) {
     }
     const before = measure()
     try {
-      const result = await compaction.compactNow(agent, controller.signal)
+      const outcome = await compactNow(agent, controller.signal)
       rec.pending = null
       rec.attempts = 0
-      if (result == null) {
+      if (outcome.status === 'unavailable') {
+        rec.last = { at: Date.now(), status: 'failed', freedTokens: 0 }
+        await notify(agent, 'Compaction request dropped: no compaction backend is mounted.')
+      } else if (outcome.status === 'empty') {
         rec.last = { at: Date.now(), status: 'empty', freedTokens: 0 }
         await notify(agent, 'Compaction found no useful range to condense; history is unchanged.')
       } else {

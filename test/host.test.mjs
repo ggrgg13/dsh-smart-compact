@@ -19,7 +19,7 @@ let sessionCounter = 0
  * Harness runtime. Each context gets a fresh session id because policy state is
  * persisted per session and would otherwise leak between cases.
  */
-function createContext({ pressure: initialPressure = 700_000, withRoutes = false, compactionIn = 'host' } = {}) {
+function createContext({ pressure: initialPressure = 700_000, withRoutes = false, compactionIn = 'host', compactCommand = false } = {}) {
   const sessionId = `session-${++sessionCounter}`
   const registered = { section: null, tool: null, command: null, listeners: {}, routes: new Map() }
   const notices = []
@@ -49,11 +49,25 @@ function createContext({ pressure: initialPressure = 700_000, withRoutes = false
       if (name === 'agents') {
         return { get: (id) => (id === sessionId ? agent : undefined) }
       }
+      if (name === 'commands') return this.commands
       return undefined
     },
     systemPrompt: { section: (section) => { registered.section = section; return () => {} } },
     tools: { register: (definition) => { registered.tool = definition; return () => {} } },
-    commands: { register: (command) => { registered.command = command; return () => {} } },
+    commands: {
+      register: (command) => { registered.command = command; return () => {} },
+      find: (agent, name) => {
+        if (!compactCommand || name !== 'compact') return undefined
+        return {
+          name: 'compact',
+          handler: async (invocation) => {
+            compactionCalls.push({ agent: invocation.agent, signal: invocation.signal, via: 'command' })
+            pressure = Math.max(0, pressure - 600_000)
+            return { kind: 'success', text: 'Compacted 2 history items (~600000 tokens).' }
+          },
+        }
+      },
+    },
     on: (event, listener) => { registered.listeners[event] = listener; return () => {} },
   }
   if (withRoutes) {
@@ -180,6 +194,18 @@ test('without any backend the request is dropped and reported', async () => {
   await registered.listeners['agent/status']({ agent, status: 'idle' })
   assert.equal(compactionCalls.length, 0)
   assert.match(notices[0], /no compaction backend is mounted/)
+  dispose()
+})
+
+test('the preset-scoped /compact command is the reachable backend', async () => {
+  const { registered, agent, notices, compactionCalls, dispose } = createContext({
+    compactionIn: 'none', compactCommand: true,
+  })
+  await registered.tool.execute({ action: 'request' }, { agent })
+  await registered.listeners['agent/status']({ agent, status: 'idle' })
+  assert.equal(compactionCalls.length, 1)
+  assert.equal(compactionCalls[0].via, 'command')
+  assert.match(notices[0], /Compacted older history/)
   dispose()
 })
 

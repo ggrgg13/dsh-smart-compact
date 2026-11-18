@@ -1,22 +1,27 @@
-# 75 · 阶段状态（2026-11-18 16:00）
+# 75 · 阶段状态（2026-11-18 16:10）
 
 给压缩后的自己：这是当前真实状态，不是计划。
 
-## 0.1.3：压缩后端在 agent 作用域，不在 Host 平面（最新修复）
+## 0.1.4：压缩后端的真正入口是 `/compact` 命令
 
-Host 平面**没有** `compaction` 服务：`dsh-web-app/cordis.patch.yml` 在那里把
-`compaction-basic` 置为 `disabled: true`，改由每个 agent preset 挂载
-（`presets/*.patch.yml`）。内置 `/compact` 命令同理，由 preset 挂载。
+两次实测否定了前两个猜测：
 
-所以宿主插件里 `ctx.get('compaction')` 永远是 `undefined`；必须从 agent 作用域取：
+1. 宿主平面没有 `compaction`（`dsh-web-app` 禁用了 `compaction-basic`）；
+2. **Agent 作用域也没有**——preset 把后端挂在 `cordis:group` + `isolate` 里，
+   而 `Agent.ctx` 是 `this.runtime.ctx`（进程级 loop runtime，见
+   `dsh-agent-loop/src/index.ts:470`），不在那个分组内。
 
-```js
-ctx.get('compaction') ?? agent.ctx?.get?.('compaction')
-```
+可达缝隙：同一个 preset 分组挂了 `command-compact`，命令注册表按 agent 作用域合并
+（`dsh-commands` 的 `view(agent)`），所以 `ctx.commands.find(agent, 'compact')`
+能拿到定义，其 handler 闭包里握着被隔离的压缩服务。
 
-真实的 `smart_compact(request)` 报 `no compaction backend is mounted` 就是这个原因。
-顺带说明：之前 `check` 显示的 `built-in rail 727k` 是**默认公式**（0.8 / 65536）算出来的，
-不是真实配置；修复后才会读到 preset 自己的 `thresholdRatio` / `headroomTokens`。
+0.1.4 的 `compactNow()` 顺序：宿主/agent 作用域的 `compaction` → `/compact` handler
+→ 都没有才算 unavailable。直接调 handler（不走 `commands.execute`），
+避免会话里多出一条"用户执行了 /compact"的记录。
+
+## 0.1.3：错误地以为 agent 作用域可解（已被 0.1.4 取代）
+
+见上。`ctx.get('compaction') ?? agent.ctx?.get?.('compaction')` 两处都是 undefined。
 
 ## 0.1.2：通知消息必须是完整的 UserMessage
 

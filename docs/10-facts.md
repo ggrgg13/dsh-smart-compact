@@ -13,6 +13,16 @@
   因此**宿主插件里 `ctx.get('compaction')` 是 undefined**，必须从 agent 作用域取：
   `agent.ctx.get('compaction')`。插件第一次真实触发压缩时报
   "no compaction backend is mounted" 就是这个原因；版本 0.1.3 起按 agent 作用域解析。
+- **agent 作用域也取不到**（2026-11-18 二次实测，0.1.4）：preset 把压缩后端挂在
+  `cordis:group` + `isolate: { compaction: true }` 里，而 Agent 的 `ctx` 是
+  `this.runtime.ctx`（进程级的 loop runtime，`dsh-agent-loop/src/index.ts:470`），
+  **不在那个 isolate 分组内**，所以 `agent.ctx.get('compaction')` 同样是 undefined。
+- **可达缝隙是 `/compact` 命令**：同一个 preset 分组里挂了 `command-compact`，
+  命令注册表按 agent 作用域合并层（`dsh-commands` 的 `view(agent)`），所以
+  `ctx.commands.find(agent, 'compact')` 能拿到定义，而它的 handler 闭包里握着
+  那个被隔离的压缩服务。插件 0.1.4 起：先试宿主/agent 作用域的 `compaction`，
+  取不到就调用 `/compact` 的 handler（直接调用，不经过 `commands.execute`，
+  避免在会话里多出一行"用户执行了 /compact"的记录）。
 - 实现：`BasicCompactionEngine`（`@deepseek-ai/dsh-compaction-basic/src/index.ts`）。
   `auto` 默认 `true`。自动触发点有三处：
   - `agent/pre-step`：`compactIfNeeded(agent, 'pressure', signal)`；
