@@ -203,31 +203,54 @@ export function apply(ctx) {
    * preset registers: `commands.find(agent, 'compact')` resolves it through the
    * agent's scope chain, and its handler closes over the isolated service.
    *
+   * Dispatching through `commands.execute` is deliberate: the `command/run`
+   * record lands before the summarization call and `command/done` after it, so
+   * the conversation shows the compaction happening instead of appearing idle.
+   *
    * @param agent idle agent whose next-turn admission the compaction reserves
    * @param signal cancellation for this attempt
    * @returns `{ status: 'unavailable' | 'empty' | 'done' | 'failed', text? }`
    */
   async function compactNow(agent, signal) {
     const direct = compactionFor(agent)
+    const commands = ctx.get('commands')
+    const command = commands?.find?.(agent, 'compact')
+
+    // Preferred path: dispatch the preset's own `/compact` through the registry.
+    // It mints a command id, logs `command/run` before the summarization starts
+    // and `command/done` after, so the conversation shows the compaction running
+    // instead of leaving the reader waiting on silence.
+    if (command !== undefined && typeof commands.execute === 'function') {
+      const execution = await commands.execute(agent, '/compact', [], signal)
+      if (execution !== undefined) {
+        const result = execution.result
+        if (result?.kind === 'error') return { status: 'failed', text: result.text }
+        const text = typeof result?.text === 'string' ? result.text : ''
+        return text.includes('No compactable history') ? { status: 'empty' } : { status: 'done' }
+      }
+    }
+
+    // Fallback without a dispatcher: call the same handler directly. It keeps the
+    // compaction out of the command log, which is only acceptable because the
+    // backend's own `compaction/*` markers still record the run.
+    if (command !== undefined) {
+      const result = await command.handler({
+        commandId: undefined,
+        agent,
+        rawInput: '',
+        attachments: [],
+        signal,
+      })
+      if (result?.kind === 'error') return { status: 'failed', text: result.text }
+      const text = typeof result?.text === 'string' ? result.text : ''
+      return text.includes('No compactable history') ? { status: 'empty' } : { status: 'done' }
+    }
+
     if (direct !== undefined) {
       const result = await direct.compactNow(agent, signal)
       return result == null ? { status: 'empty' } : { status: 'done' }
     }
-    const definition = ctx.get('commands')?.find?.(agent, 'compact')
-    if (definition === undefined) return { status: 'unavailable' }
-    // Calling the handler directly keeps the run out of the session's command log
-    // (it would render as if the user typed `/compact`); the compaction markers
-    // the backend writes are the durable record instead.
-    const result = await definition.handler({
-      commandId: undefined,
-      agent,
-      rawInput: '',
-      attachments: [],
-      signal,
-    })
-    if (result?.kind === 'error') return { status: 'failed', text: result.text }
-    const text = typeof result?.text === 'string' ? result.text : ''
-    return text.includes('No compactable history') ? { status: 'empty' } : { status: 'done' }
+    return { status: 'unavailable' }
   }
 
   async function runPending(agent) {

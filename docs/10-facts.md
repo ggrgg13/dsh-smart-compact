@@ -20,9 +20,10 @@
 - **可达缝隙是 `/compact` 命令**：同一个 preset 分组里挂了 `command-compact`，
   命令注册表按 agent 作用域合并层（`dsh-commands` 的 `view(agent)`），所以
   `ctx.commands.find(agent, 'compact')` 能拿到定义，而它的 handler 闭包里握着
-  那个被隔离的压缩服务。插件 0.1.4 起：先试宿主/agent 作用域的 `compaction`，
-  取不到就调用 `/compact` 的 handler（直接调用，不经过 `commands.execute`，
-  避免在会话里多出一行"用户执行了 /compact"的记录）。
+  那个被隔离的压缩服务。插件 0.1.5 起优先走
+  `ctx.commands.execute(agent, '/compact', [], signal)`——`command/run` 在摘要调用
+  之前落盘，用户立刻能看到压缩正在进行，`command/done` 结束后补结果；
+  拿不到 dispatcher 时才退回直接调用 handler（无痕迹），再退回宿主/agent 作用域的服务。
 - 实现：`BasicCompactionEngine`（`@deepseek-ai/dsh-compaction-basic/src/index.ts`）。
   `auto` 默认 `true`。自动触发点有三处：
   - `agent/pre-step`：`compactIfNeeded(agent, 'pressure', signal)`；

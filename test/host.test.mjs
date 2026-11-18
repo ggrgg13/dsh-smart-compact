@@ -19,7 +19,7 @@ let sessionCounter = 0
  * Harness runtime. Each context gets a fresh session id because policy state is
  * persisted per session and would otherwise leak between cases.
  */
-function createContext({ pressure: initialPressure = 700_000, withRoutes = false, compactionIn = 'host', compactCommand = false } = {}) {
+function createContext({ pressure: initialPressure = 700_000, withRoutes = false, compactionIn = 'host', compactCommand = false, compactExecute = false } = {}) {
   const sessionId = `session-${++sessionCounter}`
   const registered = { section: null, tool: null, command: null, listeners: {}, routes: new Map() }
   const notices = []
@@ -57,7 +57,7 @@ function createContext({ pressure: initialPressure = 700_000, withRoutes = false
     commands: {
       register: (command) => { registered.command = command; return () => {} },
       find: (agent, name) => {
-        if (!compactCommand || name !== 'compact') return undefined
+        if ((!compactCommand && !compactExecute) || name !== 'compact') return undefined
         return {
           name: 'compact',
           handler: async (invocation) => {
@@ -67,6 +67,13 @@ function createContext({ pressure: initialPressure = 700_000, withRoutes = false
           },
         }
       },
+      execute: compactExecute
+        ? async (agent, line, attachments, signal) => {
+          compactionCalls.push({ agent, signal, via: 'execute', line })
+          pressure = Math.max(0, pressure - 600_000)
+          return { commandId: 'cmd-1', result: { kind: 'success', text: 'Compacted 3 history items (~600000 tokens).' } }
+        }
+        : undefined,
     },
     on: (event, listener) => { registered.listeners[event] = listener; return () => {} },
   }
@@ -205,6 +212,19 @@ test('the preset-scoped /compact command is the reachable backend', async () => 
   await registered.listeners['agent/status']({ agent, status: 'idle' })
   assert.equal(compactionCalls.length, 1)
   assert.equal(compactionCalls[0].via, 'command')
+  assert.match(notices[0], /Compacted older history/)
+  dispose()
+})
+
+test('compaction is dispatched through the registry so the run is visible', async () => {
+  const { registered, agent, notices, compactionCalls, dispose } = createContext({
+    compactionIn: 'none', compactCommand: true, compactExecute: true,
+  })
+  await registered.tool.execute({ action: 'request' }, { agent })
+  await registered.listeners['agent/status']({ agent, status: 'idle' })
+  assert.equal(compactionCalls.length, 1)
+  assert.equal(compactionCalls[0].via, 'execute')
+  assert.equal(compactionCalls[0].line, '/compact')
   assert.match(notices[0], /Compacted older history/)
   dispose()
 })

@@ -1,6 +1,17 @@
-# 75 · 阶段状态（2026-11-18 16:10）
+# 75 · 阶段状态（2026-11-18 16:05）
 
 给压缩后的自己：这是当前真实状态，不是计划。
+
+## 0.1.5：通过 `/compact` 命令派发，并让用户看得见
+
+0.1.4 直接调用 handler，能压缩但会话里没有痕迹。用户明确要求：**压缩时要能在对话里
+看到这条用户指令**，而不是干等。所以 0.1.5 优先走
+`ctx.commands.execute(agent, '/compact', [], signal)`：
+
+- `command/run` 在摘要调用**开始前**落盘 → 用户立刻看到"正在压缩"；
+- `command/done` 在结束后落盘，带结果（Compacted N items / No compactable history）；
+- 拿不到 dispatcher 时退回直接调用 handler（无痕迹但功能相同），
+  再退回宿主/agent 作用域的 `compaction`，都没有才报 unavailable。
 
 ## 0.1.4：压缩后端的真正入口是 `/compact` 命令
 
