@@ -2,17 +2,20 @@
   "name": "@local/dsh-smart-compact",
   "version": "0.1.0",
   "private": true,
-  "description": "Agent-requested context compaction at turn boundaries, with a policy derived from DeepSeek Harness' own compaction settings.",
+  "description": "Agent-requested context compaction at turn boundaries, with a per-session suggested threshold kept below the Harness' own compaction rail.",
   "type": "module",
   "main": "index.js",
   "exports": {
     ".": "./index.js",
+    "./client": "./client.js",
     "./locale/*.json": "./locale/*.json",
     "./icon": "./icon.svg"
   },
   "files": [
     "index.js",
     "policy.js",
+    "routes.js",
+    "client.js",
     "cordis.patch.yml",
     "locale/*.json",
     "docs",
@@ -20,11 +23,20 @@
     "README.md"
   ],
   "scripts": {
-    "test": "node test/policy.test.mjs && node test/host.test.mjs"
+    "test": "node test/policy.test.mjs && node test/host.test.mjs && node test/routes.test.mjs && node test/client.test.mjs"
   },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-model-selection",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-locale"
+      ]
     }
   }
 }

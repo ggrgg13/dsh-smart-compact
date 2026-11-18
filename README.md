@@ -5,7 +5,7 @@
 
 ## 状态
 
-Host 半已实现，14 个单元/集成测试通过；**尚未安装到 profile**，GUI 未做。
+Host 半与 Client 半都已实现，29 个测试通过；**尚未安装到 profile**（安装放在功能满意之后）。
 M0 可行性 spike 的静态部分已完成，结论见 `docs/spike-results.md`。
 实现细节与未验证项见 `docs/70-implementation.md`。设计基于实际安装的 DSH 0.2.2-rc.3
 （Desktop / profile `desktop`）核对，事实清单见 `docs/10-facts.md`。

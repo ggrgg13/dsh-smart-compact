@@ -1,5 +1,6 @@
-# The host half is a plain Cordis plugin. The client half (model menu session
-# options) is not implemented yet; see docs/50-roadmap.md (M3).
+# One row: the package's main entry as the host half (a plain Cordis plugin).
+# The `dsh.client` declaration in package.json loads ./client.js as the browser
+# half, which contributes the model-menu row and the plugin page control.
 - insert:
     - id: smart-compact
       name: '@local/dsh-smart-compact'

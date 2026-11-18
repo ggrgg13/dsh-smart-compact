@@ -93,21 +93,24 @@ DSH 的 Host 已有 `webServer.register` 与 `connection.requestRejection`（`we
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
-| GET | `/smart-compact/state?session=<id>` | 返回全局默认、会话覆盖、生效阈值、窗口、系统线 |
-| POST | `/smart-compact/session` | `{ session, threshold }` 写会话覆盖 |
-| POST | `/smart-compact/default` | `{ percent }` 写全局默认 |
+| GET | `/smart-compact/state?sessionId=<id>` | 返回全局默认、下限、会话覆盖、生效阈值、上限、系统线 |
+| POST | `/smart-compact/session` | `{ sessionId, threshold }` 写会话覆盖 |
+| POST | `/smart-compact/default` | `{ defaultPercent }` 写全局默认 |
 
-响应统一 `application/json`、`Cache-Control: no-store`。
+响应统一 `application/json; charset=utf-8`、`Cache-Control: no-store`。
 
 ### 校验
 
-- 只接受精确路径与声明的方法；
-- 请求体上限 4 KB，字段白名单；
-- `percent` 必须是 30–90 的整数，`threshold.kind` 必须属于闭集；
-- `session` 必须是当前存活的会话（`ctx.agents.get`），否则 404；
-- 浏览器信任栅栏：只接受回环或 `ctx.webStartup.trustedHosts` 声明的 Host，
-  `Sec-Fetch-Site: cross-site` 一律拒绝，带 `Origin` 时必须与 Host 同源，
-  并委托 `connection.requestRejection`；该服务缺失或抛异常时**按拒绝处理**（fail closed）。
+- 只接受精确路径与声明的方法（否则 405 + `Allow`）；
+- `content-type` 必须是 `application/json`（否则 415）；请求体上限 8 KB（超出 413）；
+- `threshold.kind` 必须属于 `default|percent|off`，`percent` 必须是 1–100 的整数，
+  之后由服务端夹紧到 `30 … maxPercent`；
+- `defaultPercent` 必须是 30–100 的整数；
+- `sessionId` 只校验形状（`^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$`），不要求会话存活：
+  设置可以先于会话存在（比如刚切走的旧会话），回 404 只会让面板抖动；
+- 浏览器信任栅栏全部委托 `connection.requestRejection(req)`：它的 Host/Origin 检查
+  （防 DNS rebinding 与跨站）与登录 cookie 鉴权在读取任何值之前执行；
+  该服务抛异常时**按拒绝处理**（fail closed）。
 
 ### 为什么不用其他通道
 
@@ -156,3 +159,18 @@ DSH 的 Host 已有 `webServer.register` 与 `connection.requestRejection`（`we
 - 不做全局阈值仪表盘、不做历史曲线。
 - 不做每步刷新的常驻压力条（面板打开时才订阅）。
 - 不依赖任何已安装第三方插件的接口与数据。
+
+## 实现注记（2026-11-18）
+
+代码已写完（`client.js` / `routes.js`），与本规格的差异只有三处：
+
+1. **面板是菜单内联展开，不是浮层**。模型菜单自己管理浮层与焦点（owner props 里的
+   `dismiss()` 就是给"先去关菜单"用的），内联展开与它不冲突，也不用处理 portal 与 z-index。
+2. **滑杆只在松开时提交**（`pointerup` / `pointercancel` / `keyup` / `blur`），
+   避免一次拖动写几十次。
+3. **插件页默认值滑杆范围 30–90**，不是 `railPercent − 2`：默认值跟模型无关，
+   真正的上限由每个会话按自己的窗口夹紧（面板上会显示"受系统线限制，最高 67%"）。
+
+另外：UI 文案直接写在 `client.js` 里（客户端 bundle 读不到包的 JSON 文件），
+`locale/*.json` 只保留插件卡片元数据；行注册带自己的 `id: 'smart-compact'`，
+插件页的 key 是包名 `@local/dsh-smart-compact`。

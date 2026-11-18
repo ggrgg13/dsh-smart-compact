@@ -3,8 +3,8 @@
  *
  * Gives the agent one tool to read its context budget and to *request* compaction,
  * then performs that compaction after the turn ends (never mid-turn). The policy
- * follows the Harness' own compaction configuration; users pick a mode, not a
- * token count.
+ * follows the Harness' own compaction configuration; the user picks a suggested
+ * watermark as a percentage of the window, kept below the built-in rail.
  *
  * @module @local/dsh-smart-compact
  */
@@ -12,13 +12,14 @@
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
+import { mountRoutes } from './routes.js'
 import {
-  DEFAULT_MODE,
-  MODES,
-  computePolicy,
+  MIN_PERCENT,
+  computeBudget,
   describeBudget,
   formatTokens,
-  normalizeMode,
+  migrateState,
+  normalizeThreshold,
 } from './policy.js'
 
 export const name = 'smart-compact'
@@ -39,17 +40,14 @@ const STATE_FILE = join(
   'state.json',
 )
 
-/** Load persisted per-session policy. Corrupt or missing state reads as empty. */
+/** Load persisted policy. Corrupt, missing, or older state migrates to the current shape. */
 function loadState() {
   try {
-    const parsed = JSON.parse(readFileSync(STATE_FILE, 'utf8'))
-    if (parsed && typeof parsed === 'object' && parsed.sessions && typeof parsed.sessions === 'object') {
-      return parsed
-    }
+    return migrateState(JSON.parse(readFileSync(STATE_FILE, 'utf8')))
   } catch {
-    // Missing or unreadable state is not an error: modes fall back to the default.
+    // Missing or unreadable state is not an error: thresholds fall back to the default.
   }
-  return { version: 1, sessions: {} }
+  return migrateState(undefined)
 }
 
 /**
@@ -68,7 +66,18 @@ export function apply(ctx) {
   }
 
   function ensure(id) {
-    return state.sessions[id] ??= { mode: DEFAULT_MODE, pending: null, last: null, crossed: false, attempts: 0 }
+    return state.sessions[id] ??= {
+      threshold: { kind: 'default' },
+      pending: null,
+      last: null,
+      crossed: false,
+      attempts: 0,
+    }
+  }
+
+  /** The threshold a record actually uses, defaulting to the global suggestion. */
+  function thresholdOf(rec) {
+    return normalizeThreshold(rec?.threshold)
   }
 
   function save() {
@@ -95,18 +104,19 @@ export function apply(ctx) {
     }
   }
 
-  /** Measure one session against the configured policy. */
-  function evaluate(session, mode) {
+  /** Measure one session against its threshold. */
+  function evaluate(session, threshold, windowHint) {
     const meter = ctx.get('tokenMeter')
-    const context = session.requestContext?.()
-    const header = session.requestHeader?.()
+    const context = session?.requestContext?.()
+    const header = session?.requestHeader?.()
     const config = ctx.get('compaction')?.config ?? {}
-    const policy = computePolicy({
-      window: context?.contextWindow,
+    const budget = computeBudget({
+      window: context?.contextWindow ?? (Number.isFinite(windowHint) && windowHint > 0 ? windowHint : undefined),
       reserved: header?.config?.maxTokens ?? 0,
       ratio: config.thresholdRatio,
       headroom: config.headroomTokens,
-      mode,
+      threshold,
+      defaultPercent: state.defaultPercent,
     })
     let pressure = 0
     let reclaimable
@@ -124,11 +134,11 @@ export function apply(ctx) {
         // Measurement is optional; the reading still works without it.
       }
     }
-    return { policy, pressure, reclaimable }
+    return { budget, pressure, reclaimable }
   }
 
-  function reading({ policy, pressure, reclaimable }) {
-    return describeBudget({ pressure, policy, reclaimable })
+  function reading({ budget, pressure, reclaimable }) {
+    return describeBudget({ pressure, budget, reclaimable })
   }
 
   /** Tell the agent something once, without waking an idle conversation. */
@@ -151,13 +161,19 @@ export function apply(ctx) {
       await notify(agent, 'Compaction request dropped: no compaction backend is mounted.')
       return
     }
-    const current = evaluate(agent.session, rec.mode)
-    if (current.policy.mode === 'off') {
+    const current = evaluate(agent.session, thresholdOf(rec))
+    if (current.budget.status === 'off') {
       rec.pending = null
       save()
       return
     }
-    if (current.policy.watermark === null || current.pressure < current.policy.watermark) {
+    if (current.budget.thresholdTokens === null) {
+      rec.pending = null
+      save()
+      await notify(agent, `Compaction skipped: ${reading(current)}. Nothing was changed.`)
+      return
+    }
+    if (current.pressure < current.budget.thresholdTokens) {
       rec.pending = null
       save()
       await notify(agent, `Compaction skipped: ${reading(current)}. Nothing was changed.`)
@@ -166,7 +182,15 @@ export function apply(ctx) {
     running.add(agent.id)
     const controller = new AbortController()
     controllers.add(controller)
-    const before = current.pressure
+    const measure = () => {
+      try {
+        return ctx.get('tokenMeter')?.measure(agent.session).totalTokens
+      } catch {
+        // Measurement is optional; the notice then omits the released amount.
+      }
+      return undefined
+    }
+    const before = measure()
     try {
       const result = await compaction.compactNow(agent, controller.signal)
       rec.pending = null
@@ -175,10 +199,12 @@ export function apply(ctx) {
         rec.last = { at: Date.now(), status: 'empty', freedTokens: 0 }
         await notify(agent, 'Compaction found no useful range to condense; history is unchanged.')
       } else {
-        const after = evaluate(agent.session, rec.mode).pressure
-        const freed = Math.max(0, before - after)
-        rec.last = { at: Date.now(), status: 'ok', freedTokens: freed }
-        await notify(agent, `Compacted older history; ~${formatTokens(freed)} tokens freed. Recent history and files on disk are unchanged.`)
+        const after = measure()
+        const freed = Number.isFinite(before) && Number.isFinite(after) ? Math.max(0, before - after) : null
+        rec.last = { at: Date.now(), status: 'ok', freedTokens: freed ?? 0 }
+        await notify(agent, freed === null
+          ? 'Compacted older history. Recent history and files on disk are unchanged.'
+          : `Compacted older history; ~${formatTokens(freed)} tokens freed. Recent history and files on disk are unchanged.`)
       }
       save()
     } catch (error) {
@@ -233,21 +259,21 @@ export function apply(ctx) {
         const agent = exec.agent
         if (!agent) throw new Error('compact_context requires an owning agent session')
         const rec = ensure(agent.id)
-        const current = evaluate(agent.session, rec.mode)
+        const current = evaluate(agent.session, thresholdOf(rec))
         const line = reading(current)
         if (args.action === 'check') return { text: line }
-        if (rec.mode === 'off') {
-          return { text: `Not queued: compaction is disabled for this session. ${line}` }
+        if (current.budget.status === 'off') {
+          return { text: `Not queued: compaction is turned off for this session. ${line}` }
         }
         if (rec.pending) {
           return { text: `Already queued for the end of this turn. ${line}` }
         }
-        if (current.policy.watermark === null) {
-          return { text: `Not queued: the context window is not known yet. ${line}` }
+        if (current.budget.thresholdTokens === null) {
+          return { text: `Not queued: ${line}.` }
         }
-        if (current.pressure < current.policy.watermark) {
+        if (current.pressure < current.budget.thresholdTokens) {
           return {
-            text: `Not queued: ${line} is below the watermark; no compaction needed yet.`,
+            text: `Not queued: ${line} is below the suggested watermark; no compaction needed yet.`,
           }
         }
         rec.pending = { requestedAt: Date.now(), reason: typeof args.reason === 'string' ? args.reason : '' }
@@ -271,57 +297,122 @@ export function apply(ctx) {
   disposers.push(ctx.commands.register({
     definitionId: 'smart-compact',
     name: 'smart-compact',
-    description: 'Show or change this session\'s context compaction policy',
+    description: 'Show or change this session\'s context compaction threshold',
     handler(invocation) {
       const agent = invocation.agent
       const rec = ensure(agent.id)
       const parts = invocation.rawInput.trim().split(/\s+/).filter(Boolean)
       const [first, second] = parts
-      const maybeMode = (value) => (MODES.includes(value) ? value : undefined)
+      const percentArg = (value) => {
+        const parsed = Number.parseInt(String(value ?? '').replace(/%$/, ''), 10)
+        return Number.isFinite(parsed) ? Math.max(MIN_PERCENT, Math.min(99, parsed)) : undefined
+      }
 
       if (first === undefined || first === 'status') {
-        const current = evaluate(agent.session, rec.mode)
+        const current = evaluate(agent.session, thresholdOf(rec))
+        const shape = rec.threshold?.kind ?? 'default'
         const pending = rec.pending ? 'yes' : 'no'
         return {
           kind: 'success',
-          text: `mode ${rec.mode} · ${reading(current)} · pending ${pending}`,
+          text: `threshold ${shape} · ${reading(current)} · pending ${pending}`,
         }
       }
-      const mode = maybeMode(first === 'mode' ? second : first)
-      if (first === 'on') {
-        rec.mode = 'balanced'
-      } else if (mode !== undefined) {
-        rec.mode = mode
-      } else if (first === 'reset') {
-        rec.mode = DEFAULT_MODE
+      if (first === 'off') {
+        rec.threshold = { kind: 'off' }
+      } else if (first === 'default' || first === 'reset') {
+        rec.threshold = { kind: 'default' }
+      } else if (first === 'on') {
+        rec.threshold = { kind: 'percent', percent: state.defaultPercent }
       } else {
-        return { kind: 'error', text: `Usage: /smart-compact [status|off|late|balanced|eager|reset]` }
+        const percent = percentArg(first === 'set' ? second : first)
+        if (percent === undefined) {
+          return {
+            kind: 'error',
+            text: 'Usage: /smart-compact [status|off|on|default|<percent 30-99>]',
+          }
+        }
+        rec.threshold = { kind: 'percent', percent }
       }
+      rec.crossed = false
       save()
-      const current = evaluate(agent.session, rec.mode)
-      return { kind: 'success', text: `mode ${rec.mode} · ${reading(current)}` }
+      const current = evaluate(agent.session, thresholdOf(rec))
+      return { kind: 'success', text: `${rec.threshold.kind} · ${reading(current)}` }
     },
   }))
+
+  /**
+   * Wire shape of one session, shared by the settings routes.
+   * @param {string} id session id
+   * @param {number} [windowHint] window the browser already read from the projection
+   */
+  function describeSession(id, windowHint) {
+    const rec = record(id)
+    const threshold = thresholdOf(rec)
+    const agent = ctx.get('agents')?.get?.(id)
+    const { budget } = evaluate(agent?.session, threshold, windowHint)
+    return {
+      id,
+      threshold,
+      pending: Boolean(rec?.pending),
+      status: budget.status,
+      percent: budget.percent,
+      requestedPercent: budget.requestedPercent,
+      thresholdTokens: budget.thresholdTokens,
+      rail: budget.rail,
+      railPercent: budget.railPercent,
+      maxPercent: budget.maxPercent,
+      clamped: budget.clamped,
+      last: rec?.last ?? null,
+    }
+  }
+
+  const settings = {
+    defaultPercent: () => state.defaultPercent,
+    minPercent: () => MIN_PERCENT,
+    setDefaultPercent(percent) {
+      state.defaultPercent = percent
+      flush()
+      return true
+    },
+    describeSession,
+    setSessionThreshold(id, threshold) {
+      const rec = ensure(id)
+      rec.threshold = normalizeThreshold(threshold)
+      rec.crossed = false
+      flush()
+      return describeSession(id)
+    },
+  }
+
+  // The settings panel needs both the HTTP carrier and the trust fence. When
+  // either service is absent (headless compositions) the callback never runs
+  // and the plugin keeps working without routes.
+  if (typeof ctx.inject === 'function') {
+    const routes = ctx.inject(['webServer', 'connection'], (scoped) => {
+      scoped.effect(() => mountRoutes(scoped, settings), 'smart-compact: settings routes')
+    })
+    disposers.push(() => routes?.dispose?.())
+  }
 
   disposers.push(ctx.on('agent/status', ({ agent, status }) => {
     if (status !== 'idle') return
     return runPending(agent)
   }))
-
   disposers.push(ctx.on('agent/pre-step', async ({ agent }, next) => {
     try {
       const rec = record(agent.id)
-      const mode = rec?.mode ?? DEFAULT_MODE
-      if (mode !== 'off' && !rec?.pending) {
-        const current = evaluate(agent.session, mode)
-        if (current.policy.watermark !== null && current.pressure >= current.policy.watermark) {
+      const threshold = thresholdOf(rec)
+      if (threshold.kind !== 'off' && !rec?.pending) {
+        const current = evaluate(agent.session, threshold)
+        const line = current.budget.thresholdTokens
+        if (line !== null && current.pressure >= line) {
           if (!rec?.crossed) {
             const target = rec ?? ensure(agent.id)
             target.crossed = true
             save()
-            await notify(agent, `Context is near its suggested compaction watermark (${reading(current)}). If you are finishing a phase, write handoff notes and call compact_context(action: "request").`)
+            await notify(agent, `Context passed its suggested compaction watermark (${reading(current)}). If you are finishing a phase, write handoff notes and call compact_context(action: "request").`)
           }
-        } else if (rec?.crossed && (current.policy.watermark === null || current.pressure < current.policy.watermark * 0.9)) {
+        } else if (rec?.crossed && (line === null || current.pressure < line * 0.9)) {
           rec.crossed = false
           save()
         }
