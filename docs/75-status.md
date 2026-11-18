@@ -43,7 +43,7 @@ ctx.get('compaction') ?? agent.ctx?.get?.('compaction')
 
 ## 当前验证状态
 
-- 36 个测试全过（policy 11 / host 14 / routes 8 / client 2）。
+- 35 个测试全过（policy 11 / host 14 / routes 8 / client 2）。
 - 以 `link:` 装在 desktop profile；**改的是 index.js，需要重启宿主（或重载插件）才生效**。
 
 ## 待办
