@@ -377,7 +377,6 @@ window.__ModuleLoader__.load({
         type: 'button',
         role: 'radio',
         'aria-checked': kind === value,
-        disabled: saving,
         className: kind === value ? 'dsc-radio dsc-radioOn' : 'dsc-radio',
         onClick: () => { choose(value) },
       }, [
@@ -415,10 +414,13 @@ window.__ModuleLoader__.load({
               min: minPercent,
               max: maxPercent,
               systemPercent: session && session.railPercent !== null ? session.railPercent : null,
-              disabled: saving || unknownWindow || kind === 'off',
+              // Never disable while saving: the focused range input would blur
+              // to <body>, which the host menu reads as "focus left the card"
+              // and closes. Save-in-flight duplicates are ignored instead.
+              disabled: unknownWindow || kind === 'off',
               label: t('panel.suggested'),
               onDraft: (next) => { setDraft(next) },
-              onCommit: (next) => { void apply({ kind: 'percent', percent: next }) },
+              onCommit: (next) => { if (!saving) void apply({ kind: 'percent', percent: next }) },
             }),
           tooSmall ? null : h('div', { key: 'radios', style: { display: 'flex', flexDirection: 'column', gap: 4 } }, [
             radio('default', fill(t('panel.follow'), { percent: defaultPercent })),
