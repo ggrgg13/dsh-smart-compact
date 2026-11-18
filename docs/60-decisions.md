@@ -206,3 +206,28 @@ agent 会把"能绕过"当成默认工具，用户也会在正常会话里误开
 
 **Revisit**：验收完成后默认保持关闭；若将来要做"每会话一次性绕过"，再评估是否值得
 把它变成语义化的"现在压"入口（与 ADR-1 的回合内限制冲突，需先解决）。
+
+---
+
+## ADR-13 · 人用命令必须声明 `input`，否则带参数的行会变成普通消息
+
+**Context**：实测 `/smart-compact force` 与 `/smart-compact status` 都进了对话历史
+（`user/message`），宿主从未收到 `command/run`。查 DSH 客户端
+`dsh-client-ui-commands/src/client/service.ts` 的 `matchEnter`：没有 `input` 描述符的
+宿主命令被当作 **bare** 命令，代码 `if (!bare) return undefined` 直接放弃认领，
+于是整行按普通提示词提交——命令根本没到注册表。`/permission danger-full-access`
+能用，是因为它声明了 `input`。
+
+**Decision**：命令声明 `input: { hint: '…' }`。带 `input` 的宿主命令在客户端是
+`leadingInput` 认领：菜单选中只插入 token 并等待参数，回车把「命令名 + 参数」整行交给
+`commands.execute`，`parseCommand` 再拆成 `name` 与 `rawInput`。
+
+**Consequences**：
+- `/smart-compact`、`/smart-compact force 原因`、`/smart-compact 45` 都能执行；
+- 从菜单里选它不再立即执行，而是插入 `/smart-compact ` 等你补参数（回车空参=status）；
+- 命令因此只出现在输入行首位的候选里（有 hint 的命令不进非首位列表），这是 Harness
+  的既有规则，不是插件行为；
+- 测试锁定 `input.hint` 存在，防止有人把 hint 当装饰删掉。
+
+**Revisit**：若将来命令不再需要参数，可以去掉 hint 回到 bare；反过来，凡是带参数的
+命令都必须声明 hint，这是 Harness 端的硬规则。

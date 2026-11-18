@@ -1,6 +1,20 @@
-# 75 · 阶段状态（2026-11-18 16:25）
+# 75 · 阶段状态（2026-11-18 16:50）
 
 给压缩后的自己：这是当前真实状态，不是计划。
+
+## 0.1.7：命令声明 `input.hint`，带参数的行才会进命令通道
+
+现象：用户敲 `/smart-compact force`、`/smart-compact status`，两条都以普通消息进会话
+（`user/message`，见测试 session 的 seq 689/700/842/860），宿主没有 `command/run`。
+
+根因：`dsh-client-ui-commands/src/client/service.ts` 的 `matchEnter`——没有 `input`
+描述符的宿主命令是 bare 命令，`if (!bare) return undefined` 放弃认领，带参数的行就被当
+普通提示词提交。`/permission danger-full-access` 正常，是因为它声明了 `input`。
+
+修复：命令加 `input: { hint: 'status | 40 | default | off | force [原因]' }`，测试锁定其存在。
+副作用（有意接受）：菜单选中改为插入 `/smart-compact ` 等你补参数；空参回车=status。
+
+测试：45 个（policy 12 / host 22 / routes 9 / client 2）。
 
 ## 0.1.6：绕过阈值是插件页开关（默认关），工具/命令/prompt 跟随
 

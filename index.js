@@ -496,6 +496,12 @@ export function apply(ctx) {
     definitionId: 'smart-compact',
     name: 'smart-compact',
     description: '查看或修改本会话的上下文压缩阈值',
+    // Without an `input` descriptor the Web composer classifies this as a BARE
+    // host command: `matchEnter` then answers `undefined` for any argued line
+    // ("bare host commands act on the bare token only"), so `/smart-compact
+    // force` is submitted as an ordinary prompt and never reaches the handler.
+    // Declaring the hint turns every line into a leadingInput claim instead.
+    input: { hint: 'status | 40 | default | off | force [原因]' },
     handler(invocation) {
       const agent = invocation.agent
       const rec = ensure(agent.id)

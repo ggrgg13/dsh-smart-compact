@@ -169,6 +169,16 @@ test('registers the policy section, the tool and the command', () => {
   dispose()
 })
 
+test('the human command declares an input hint so argued lines are commands', () => {
+  const { registered, dispose } = createContext()
+  // The Web composer treats a host command without `input` as a BARE command:
+  // matchEnter returns undefined once the line carries arguments, and the whole
+  // line is submitted as an ordinary prompt. The hint is what makes
+  // `/smart-compact force` reach the handler at all.
+  assert.equal(registered.command.input?.hint, 'status | 40 | default | off | force [原因]')
+  dispose()
+})
+
 test('check reports usage, the suggested line and the rail', async () => {
   const { registered, agent, dispose } = createContext()
   const result = await registered.tool.execute({ action: 'check' }, { agent })
