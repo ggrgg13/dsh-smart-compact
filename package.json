@@ -18,12 +18,13 @@
     "client.js",
     "cordis.patch.yml",
     "locale/*.json",
+    "market",
     "docs",
     "icon.svg",
     "README.md"
   ],
   "scripts": {
-    "test": "node test/policy.test.mjs && node test/host.test.mjs && node test/routes.test.mjs && node test/client.test.mjs"
+    "test": "node test/policy.test.mjs && node test/host.test.mjs && node test/routes.test.mjs && node test/client.test.mjs && node test/market.test.mjs"
   },
   "engines": {
     "dsh": ">=0.2.2-rc.1"

@@ -1,0 +1,53 @@
+{
+  "format": 1,
+  "title": {
+    "en": "dsh-smart-compact",
+    "zh": "智能压缩"
+  },
+  "description": {
+    "en": "Agent-requested context compaction at semantic turn boundaries, with a per-session suggested threshold kept below the harness rail.",
+    "zh": "让 agent 在语义合适的边界自主请求上下文压缩，阈值按会话设置并始终低于系统自动压缩线。"
+  },
+  "plugins": [
+    {
+      "name": "dsh-smart-compact",
+      "title": {
+        "en": "Smart compact",
+        "zh": "智能压缩"
+      },
+      "description": {
+        "en": "Lets the agent choose when to compact: a live budget reading, a per-session threshold below the built-in rail, and a visible compaction run at the end of the turn.",
+        "zh": "让 agent 自己挑压缩时机：实时读数、低于系统线的会话阈值，压缩在回合结束后可见地执行。"
+      },
+      "homepage": "https://github.com/ggrgg13/dsh-smart-compact#readme",
+      "repository": {
+        "url": "https://github.com/ggrgg13/dsh-smart-compact"
+      },
+      "metadata": {
+        "keywords": [
+          "dsh",
+          "dsh-plugin",
+          "deepseek-harness",
+          "context",
+          "compaction"
+        ],
+        "labels": [],
+        "sortKeys": {}
+      },
+      "versions": [
+        {
+          "version": "0.1.8",
+          "publishTimestamp": 1794992832,
+          "source": {
+            "type": "git",
+            "url": "https://github.com/ggrgg13/dsh-smart-compact.git",
+            "commit": "5735b8878a779b86441db597a96a1057a234dfbe"
+          },
+          "engines": {
+            "dsh": ">=0.2.2-rc.1"
+          }
+        }
+      ]
+    }
+  ]
+}

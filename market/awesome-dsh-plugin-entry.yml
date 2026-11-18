@@ -1,0 +1,28 @@
+# Draft entry for the community catalog (awesome-dsh-plugin).
+#
+# Submit it as a pull request adding ONE file:
+#   data/plugins/ggrgg13__dsh-smart-compact.yml
+# to https://github.com/awesome-dsh-plugin/awesome-dsh-plugin
+#
+# Requirements this repository already meets: it declares dsh.bundle.patch and
+# ships real code. Still required before the CI gate passes:
+#   - the repository must be at least 1 day old;
+#   - the repository needs the `dsh-plugin` GitHub topic.
+#
+# `category` values live in contributing.md of that repository. `session` fits
+# what this plugin does; `tools` is a reasonable second choice and a maintainer
+# corrects a near miss rather than rejecting it.
+#
+# Optional extras, both uncommented below:
+#   icon:    a GitHub-hosted RASTER image (png/jpg/webp), svg is refused;
+#   tarball: a prebuilt .tgz attached to a GitHub Release (needed only when the
+#            repository cannot be installed from source).
+
+url: https://github.com/ggrgg13/dsh-smart-compact
+name: ggrgg13/dsh-smart-compact
+category: session
+description:
+  en: Lets the agent request context compaction at semantic turn boundaries, with a per-session suggested threshold kept below the harness rail.
+  zh: 让 agent 在语义合适的边界自主请求上下文压缩，阈值按会话设置并始终低于系统自动压缩线。
+# icon: https://raw.githubusercontent.com/ggrgg13/dsh-smart-compact/main/assets/icon-180.png
+# tarball: https://github.com/ggrgg13/dsh-smart-compact/releases/latest/download/dsh-smart-compact.tgz

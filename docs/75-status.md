@@ -15,7 +15,7 @@
 让命令结果先渲染，再直接跑 `runPending`；回合内排队仍走状态迁移。回执文案从
 "本回合结束后执行"改成"随后执行"，对两种情形都成立。新增 host 测试覆盖"无状态事件也执行"。
 
-测试：46 个（policy 12 / host 23 / routes 9 / client 2）。
+测试：49 个（policy 12 / host 23 / routes 9 / client 2 / market 3）。
 
 **验收（2026-11-18 16:55，测试 session `b3d0…` 实测）**
 
@@ -118,12 +118,15 @@
 
 ## 当前验证状态
 
-- 35 个测试全过（policy 11 / host 14 / routes 8 / client 2）。
-- 以 `link:` 装在 desktop profile；**改的是 index.js，需要重启宿主（或重载插件）才生效**。
+- 49 个测试全过（policy 12 / host 23 / routes 9 / client 2 / market 3）。
+- 以 `link:` 装在 desktop profile；改 `index.js` 需重载插件（插件页开关）或重启宿主，
+  改 `client.js` 需刷新页面。
+- 压缩链路已实测：工具触发、命令触发、空闲时命令立即触发三条都跑通（见 0.1.8 验收记录）。
+- M0 可行性 spike 的静态部分已完成，结论见 `docs/spike-results.md`。
 
 ## 待办
 
-1. **重启 DSH** 让 0.1.3 生效，然后重新 `smart_compact(request)` 验证 R1。
-2. **推送**：本地领先 `origin/main` 若干提交（`c3d8d00` 之后全部），需要用户 `git push`。
-3. **从 git 重装验证**：当前是链接安装，发布产物还没验过。
-4. UI 未复测：拖滑杆松手后菜单是否保持打开（`53cb62d` 之后）。
+1. **推送**：本地领先 `origin/main`，需要用户 `git push`。
+2. **UI 复测**：拖滑杆松手后菜单保持打开（`53cb62d` 之后未复测）。
+3. **跨阈值提醒**：只有单测，长会话里还没真实复现到“首次越线时注入一次提醒”。
+4. **发布**：从 git URL 重装验证发布产物；社区目录收录见 `docs/80-distribution.md`。
